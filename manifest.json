@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.4",
+      "tag": "v0.1.4",
+      "source_revision": "35119a4ccf31488bd4d2e0b2c03cb4da23c2ad41",
+      "released_at": "2026-08-08T10:52:01Z",
+      "channel": "Stable",
+      "release_notes": "## What's Changed\n\n- **Fix version reporting**: the plugin's assembly version was hardcoded to `0.1.0`, so the WebUI and server logs showed \"v0.1.0\" even though newer releases were loaded. The version is now derived from the git tag at build time, so `v0.1.4` reports as **0.1.4** (matches the manifest version). Update detection (keyed on source revision / release tag) was already correct; this only fixes the displayed version.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.4/NfoGenerator-v0.1.4_linux-arm64.zip",
+          "checksum": "59846a99b1cbe49ddb91eca3653ef91147bbd2fe14df8aba3d2fb0826cc51b0f"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.4/NfoGenerator-v0.1.4_linux-x64.zip",
+          "checksum": "ba1c6da7a51338277f0133568c8140f8ac5df95ae571fd3e9827c90bfec9e557"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.4/NfoGenerator-v0.1.4_win-x64.zip",
+          "checksum": "2a917dc3c3f22b073efe533bec30fbba7e382bd1e32290bdaaad1cc1fb88de20"
+        }
+      ]
+    },
+    {
       "version": "0.1.3",
       "tag": "v0.1.3",
       "source_revision": "ff9a68c43b223dc21c3abf0cbe63f676b02af932",
