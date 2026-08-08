@@ -1,0 +1,16 @@
+{
+  "id": "5c5482c1-3dd0-49cb-b862-d57e305da353",
+  "name": "NFO Generator",
+  "overview": "Generates Kodi-style NFO files and artwork sidecars next to your video files whenever a release is matched by Shoko.",
+  "authors": "Baine",
+  "repository_url": "https://github.com/Baine/shoko-nfo-generator",
+  "homepage_url": null,
+  "tags": [
+    "metadata",
+    "kodi",
+    "nfo",
+    "sidecar"
+  ],
+  "image_url": null,
+  "releases": []
+}
