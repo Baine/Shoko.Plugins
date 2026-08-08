@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.10",
+      "tag": "v0.1.10",
+      "source_revision": "1c1ee65d74dce1d0876c451cc6fcf26a0d0acaf7",
+      "released_at": "2026-08-08T22:27:06Z",
+      "channel": "Stable",
+      "release_notes": "## Fixed\n\n- Queue-backed NFO jobs now wait for Shoko Server to finish starting before accessing metadata or video services. This prevents startup-time null-reference failures and preserves queued work after a restart.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.10/NfoGenerator-v0.1.10_linux-arm64.zip",
+          "checksum": "23bb7c890785d875acfbd3d280a1a8848eeabb5057433b37cf426b3ffdf131fc"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.10/NfoGenerator-v0.1.10_linux-x64.zip",
+          "checksum": "6caac2e6c2d08e3f5ac8d216ddec70d9d31b2dd2cca7a7f97fe4857a91328aa8"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.10/NfoGenerator-v0.1.10_win-x64.zip",
+          "checksum": "2897c40c0bc15f4302d56943226bb0fefeeccf750bf054ed37c9f02fee029711"
+        }
+      ]
+    },
+    {
       "version": "0.1.9",
       "tag": "v0.1.9",
       "source_revision": "46647979244cc69b56be3863912e3c2ce688a33c",
