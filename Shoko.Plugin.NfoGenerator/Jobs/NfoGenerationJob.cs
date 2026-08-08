@@ -1,3 +1,4 @@
+using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Video.Services;
 using Shoko.QueueProcessor.Abstractions;
@@ -8,7 +9,7 @@ namespace Shoko.Plugin.NfoGenerator.Jobs;
 
 [LongRunning]
 [DisallowConcurrencyGroup("NfoGenerator")]
-public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataService metadataService, IVideoService videoService, IQueueScheduler queueScheduler) : IQueueJob
+public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataService metadataService, IVideoService videoService, IQueueScheduler queueScheduler, ISystemService systemService) : IQueueJob
 {
     [JobKeyMember]
     public NfoGenerationKind Kind { get; set; }
@@ -54,6 +55,8 @@ public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataServi
 
     public async Task Process()
     {
+        await systemService.WaitForStartupAsync();
+
         switch (Kind)
         {
             case NfoGenerationKind.Video when videoService.GetVideoByID(ID) is { } video:
