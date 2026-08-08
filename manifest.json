@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.1",
+      "tag": "v0.1.1",
+      "source_revision": "6aca649a7f321f336b516a09f6c6a55ae222716e",
+      "released_at": "2026-08-08T08:48:54Z",
+      "channel": "Stable",
+      "release_notes": "Fixes Shoko's \"Plugin does not have embedded identity metadata\" warning.\n\n**Changes:**\n- Embed plugin identity metadata in the DLL: `PackageID`, `PackageName`, `PackageOverview`, `RepositoryUrl`, `RuntimeIdentifier`, `ReleaseChannel`, `ReleaseDate`, `SourceRevision`, `ReleaseTag`\n- Shoko now recognizes the plugin by its manifest GUID and shows the correct runtime, channel, and source revision",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.1/NfoGenerator-v0.1.1_linux-arm64.zip",
+          "checksum": "e2bb90a046634f2d6de7a446a0d701e9f8a3596943d75fa1502077474f7ff518"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.1/NfoGenerator-v0.1.1_linux-x64.zip",
+          "checksum": "5ac16eea6b439a23eecca79ce29a1625a8bbc51c27bb28acee1211ecc936301a"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.1/NfoGenerator-v0.1.1_win-x64.zip",
+          "checksum": "6a2390f8207c8e440ecaaf4b8663ebede244835d222123c4edaf479eb1e7f153"
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "tag": "v0.1.0",
       "source_revision": "96f2ffce23a850fb5e67bc576353bff344443fc6",
