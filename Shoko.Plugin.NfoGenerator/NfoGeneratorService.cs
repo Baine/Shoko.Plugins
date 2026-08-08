@@ -23,14 +23,13 @@ namespace Shoko.Plugin.NfoGenerator;
 /// </summary>
 public sealed class NfoGeneratorService : IHostedService
 {
-    public readonly record struct LibraryCheckResult(int Written, int Removed);
-
     private readonly IVideoReleaseService _releaseService;
     private readonly ConfigurationProvider<NfoGeneratorSettings> _settings;
     private readonly IMetadataService _metadataService;
     private readonly IVideoService _videoService;
     private readonly IQueueScheduler _queueScheduler;
     private readonly ILogger<NfoGeneratorService> _logger;
+    private LibraryRunState? _libraryRun;
 
     public NfoGeneratorService(
         IVideoReleaseService releaseService,
@@ -117,29 +116,38 @@ public sealed class NfoGeneratorService : IHostedService
     public int GenerateForFolder(IManagedFolder folder, bool force = false)
         => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force);
 
-    /// <summary>Generates NFO files for the entire library, then sweeps orphan NFO/art files.</summary>
-    public LibraryCheckResult GenerateForLibrary(bool force = false)
-        => GenerateForLibraryCore(force);
-
-    private LibraryCheckResult GenerateForLibraryCore(bool force)
+    /// <summary>Generates one library series and returns the next persisted cursor, if any.</summary>
+    internal LibraryStepResult GenerateLibraryStep(int seriesIndex, bool force = false)
     {
-        var seriesList = _metadataService.GetAllShokoSeries().ToList();
-        var libraryIndex = BuildLibraryIndex(seriesList);
-        var titleLanguage = _settings.Load().TitleLanguage;
-        var showFolders = new Dictionary<int, string>();
-        var sharedShowFolders = new Dictionary<int, bool>();
-        _logger.LogInformation("Generating NFO files for the entire library: {Count} series", seriesList.Count);
-        int count = 0;
-        for (int i = 0; i < seriesList.Count; i++)
+        var run = _libraryRun ?? CreateLibraryRun();
+        if (seriesIndex < run.Series.Count)
         {
-            var series = seriesList[i];
-            _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", i + 1, seriesList.Count, LanguageResolver.Title(series, titleLanguage), series.ID);
-            count += GenerateForSeriesCore(series, force, showFolders, sharedShowFolders, sweep: false, libraryIndex: libraryIndex);
+            var series = run.Series[seriesIndex];
+            _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", seriesIndex + 1, run.Series.Count, LanguageResolver.Title(series, run.TitleLanguage), series.ID);
+            run.Written += GenerateForSeriesCore(series, force, run.ShowFolders, run.SharedShowFolders, sweep: false, libraryIndex: run.Index);
+            if (seriesIndex + 1 < run.Series.Count)
+            {
+                var next = run.Series[seriesIndex + 1];
+                return new(seriesIndex + 1, run.Series.Count, LanguageResolver.Title(next, run.TitleLanguage));
+            }
         }
-        SweepMisplacedShowNfos(showFolders);
-        _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", count);
+        SweepMisplacedShowNfos(run.ShowFolders);
+        _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", run.Written);
         int removed = SweepLibrary();
-        return new LibraryCheckResult(count, removed);
+        _logger.LogInformation("Library generation finished: {Removed} orphan NFO/art file(s) removed", removed);
+        _libraryRun = null;
+        return new(null, run.Series.Count, null);
+    }
+
+    private LibraryRunState CreateLibraryRun()
+    {
+        var series = _metadataService.GetAllShokoSeries().ToList();
+        _logger.LogInformation("Building library NFO index for {Count} series", series.Count);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var index = BuildLibraryIndex(series);
+        _logger.LogInformation("Library NFO index built in {Elapsed}", System.Diagnostics.Stopwatch.GetElapsedTime(started));
+        _logger.LogInformation("Generating NFO files for the entire library: {Count} series", series.Count);
+        return _libraryRun = new LibraryRunState(series, index, _settings.Load().TitleLanguage);
     }
 
     private void Queue(Action<NfoGenerationJob> configure)
@@ -593,6 +601,18 @@ public sealed class NfoGeneratorService : IHostedService
         => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
     private sealed record LibraryIndex(IReadOnlyList<IManagedFolder> ManagedFolders, Dictionary<int, List<string>> ShowFolders, Dictionary<string, FolderContents> FolderContents);
+
+    private sealed class LibraryRunState(IReadOnlyList<IShokoSeries> series, LibraryIndex index, string titleLanguage)
+    {
+        public IReadOnlyList<IShokoSeries> Series { get; } = series;
+        public LibraryIndex Index { get; } = index;
+        public string TitleLanguage { get; } = titleLanguage;
+        public Dictionary<int, string> ShowFolders { get; } = [];
+        public Dictionary<int, bool> SharedShowFolders { get; } = [];
+        public int Written { get; set; }
+    }
+
+    internal readonly record struct LibraryStepResult(int? NextSeriesIndex, int TotalSeries, string? NextSeriesTitle);
 
     private sealed class FolderContents
     {

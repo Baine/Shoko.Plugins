@@ -63,7 +63,13 @@ public sealed class NfoGeneratorController : ControllerBase
     [HttpPost("library")]
     public async Task<IActionResult> GenerateLibrary()
     {
-        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => job.Kind = NfoGenerationKind.Library);
+        var series = _metadataService.GetAllShokoSeries().ToList();
+        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job =>
+        {
+            job.Kind = NfoGenerationKind.Library;
+            job.Total = series.Count;
+            job.SeriesTitle = series.FirstOrDefault()?.DefaultTitle.Value;
+        });
         return Ok(new { status = "ok" });
     }
 

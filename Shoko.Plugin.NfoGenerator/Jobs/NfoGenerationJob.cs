@@ -6,18 +6,53 @@ using Shoko.QueueProcessor.Concurrency;
 
 namespace Shoko.Plugin.NfoGenerator.Jobs;
 
+[LongRunning]
 [DisallowConcurrencyGroup("NfoGenerator")]
-public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataService metadataService, IVideoService videoService) : IQueueJob
+public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataService metadataService, IVideoService videoService, IQueueScheduler queueScheduler) : IQueueJob
 {
+    [JobKeyMember]
     public NfoGenerationKind Kind { get; set; }
+
+    [JobKeyMember]
     public int ID { get; set; }
+
+    [JobKeyMember]
     public string? PreviousPath { get; set; }
+
+    [JobKeyMember]
     public bool Force { get; set; }
 
-    public string TypeName => "Generate NFO files";
-    public string Title => Kind.ToString();
+    public int Total { get; set; }
+    public string? SeriesTitle { get; set; }
 
-    public Task Process()
+    public string TypeName => "Generate NFO files";
+    public string Title => Kind switch
+    {
+        NfoGenerationKind.Library => $"Library: {SeriesTitle ?? "preparing"} ({ID + 1}/{Total}, {Progress}%)",
+        NfoGenerationKind.Relocated => $"Relocated file {ID}",
+        NfoGenerationKind.Delete => "Remove stale sidecars",
+        _ => $"{Kind} {ID}",
+    };
+    public Dictionary<string, object> Details
+    {
+        get
+        {
+            var details = new Dictionary<string, object>
+            {
+                ["Action"] = Kind.ToString(),
+                ["Target"] = Kind == NfoGenerationKind.Library ? SeriesTitle ?? "Preparing library index" : ID.ToString(),
+            };
+            if (Kind == NfoGenerationKind.Library)
+                details["Progress"] = $"{ID + 1}/{Total} ({Progress}%)";
+            if (PreviousPath is not null)
+                details["Previous Path"] = PreviousPath;
+            return details;
+        }
+    }
+
+    private int Progress => Total > 0 ? (ID + 1) * 100 / Total : 0;
+
+    public async Task Process()
     {
         switch (Kind)
         {
@@ -34,7 +69,16 @@ public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataServi
                 service.GenerateForFolder(folder, Force);
                 break;
             case NfoGenerationKind.Library:
-                service.GenerateForLibrary(Force);
+                var step = service.GenerateLibraryStep(ID, Force);
+                if (step.NextSeriesIndex is { } next)
+                    await queueScheduler.RunAfterCurrent<NfoGenerationJob>(job =>
+                    {
+                        job.Kind = NfoGenerationKind.Library;
+                        job.ID = next;
+                        job.Force = Force;
+                        job.Total = step.TotalSeries;
+                        job.SeriesTitle = step.NextSeriesTitle;
+                    });
                 break;
             case NfoGenerationKind.Delete when PreviousPath is not null:
                 service.DeleteForPath(PreviousPath);
@@ -43,7 +87,6 @@ public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataServi
                 service.GenerateForRelocatedFile(file, PreviousPath);
                 break;
         }
-        return Task.CompletedTask;
     }
 
     internal static void SelfCheck()
@@ -51,8 +94,9 @@ public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataServi
         var library = JobKeyBuilder<NfoGenerationJob>.Create().UsingJobData(job => job.Kind = NfoGenerationKind.Library).Build();
         var duplicateLibrary = JobKeyBuilder<NfoGenerationJob>.Create().UsingJobData(job => job.Kind = NfoGenerationKind.Library).Build();
         var video = JobKeyBuilder<NfoGenerationJob>.Create().UsingJobData(job => job.ID = 1).Build();
-        if (library != duplicateLibrary || library == video)
-            throw new InvalidOperationException("NFO queue job keys must deduplicate libraries without merging target jobs.");
+        var series = JobKeyBuilder<NfoGenerationJob>.Create().UsingJobData(job => { job.Kind = NfoGenerationKind.Series; job.ID = 1; }).Build();
+        if (library != duplicateLibrary || library == video || video == series)
+            throw new InvalidOperationException("NFO queue job keys must deduplicate only equivalent work.");
     }
 }
 
