@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.8",
+      "tag": "v0.1.8",
+      "source_revision": "f77480fd3864ecbce3f124a2701fd9e78e16aede",
+      "released_at": "2026-08-08T20:31:48Z",
+      "channel": "Stable",
+      "release_notes": "## Queue-backed generation\n\n- Run NFO generation through Shoko's persisted queue instead of local background tasks.\n- Serialize library checks and event-driven work, queueing events behind active library generation.\n- Deduplicate matching pending generation jobs and surface them in Shoko's queue.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.8/NfoGenerator-v0.1.8_linux-arm64.zip",
+          "checksum": "b994032c6d9118389359d49e7c182893600b0190ddaaae25462c77501dad5709"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.8/NfoGenerator-v0.1.8_linux-x64.zip",
+          "checksum": "dcbfabe5ab1eb7480fb02c4499587cc665620523e9b541d4688aa37663f50bba"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.8/NfoGenerator-v0.1.8_win-x64.zip",
+          "checksum": "31cdfc194e0dbfb88fd6eeff04d9d42a618de0f9b4fae83e0c46e55215428fb1"
+        }
+      ]
+    },
+    {
       "version": "0.1.7",
       "tag": "v0.1.7",
       "source_revision": "3eabe1be4455d02e1ede5313a9adb27a8a0f23d3",
