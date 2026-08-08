@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.9",
+      "tag": "v0.1.9",
+      "source_revision": "46647979244cc69b56be3863912e3c2ce688a33c",
+      "released_at": "2026-08-08T21:10:38Z",
+      "channel": "Stable",
+      "release_notes": "## Resumable library generation\n\n- Checkpoint full-library NFO generation after each series and resume from the persisted cursor after restart.\n- Show the current series name, numeric progress, and percentage in Shoko's queue.\n- Mark NFO generation as long-running and prevent cross-action queue-key collisions.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.9/NfoGenerator-v0.1.9_linux-arm64.zip",
+          "checksum": "19888c624aba1445e4dc8d5006f7f396203cac7db0969da897377772f797dca2"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.9/NfoGenerator-v0.1.9_linux-x64.zip",
+          "checksum": "aaa5807876cf6c5c52af3b6dccbc3ae9109453a2c432759c24cf886a1051f227"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.9/NfoGenerator-v0.1.9_win-x64.zip",
+          "checksum": "80e4d3d4b9a195939042e6b0c51645eb50e100173a1af3f654e547bf11ee383d"
+        }
+      ]
+    },
+    {
       "version": "0.1.8",
       "tag": "v0.1.8",
       "source_revision": "f77480fd3864ecbce3f124a2701fd9e78e16aede",
