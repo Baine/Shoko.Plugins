@@ -63,8 +63,10 @@ jobs:
 
             if [[ "$IS_PRERELEASE" == "true" ]]; then
               echo "file_ver=v${VERSION_BASE}-dev" >> $GITHUB_OUTPUT
+              echo "is_dev=true" >> $GITHUB_OUTPUT
             else
               echo "file_ver=v${VERSION_BASE}" >> $GITHUB_OUTPUT
+              echo "is_dev=false" >> $GITHUB_OUTPUT
             fi
           else
             # Fallback for branch-based test builds
@@ -74,6 +76,8 @@ jobs:
 
       - name: Publish
         run: dotnet publish Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Release -r ${{ matrix.rid }} --no-self-contained -o publish
+        env:
+          RELEASE_CHANNEL: ${{ steps.vars.outputs.is_dev == 'true' && 'Dev' || 'Stable' }}
 
       - name: Package ZIP (Linux)
         if: runner.os == 'Linux'

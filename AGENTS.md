@@ -44,6 +44,18 @@ serialization/compare logic.
 - **Content cache**: the NFO file on disk is the cache. Serialize first, compare
   with `File.ReadAllText`, write only when different (keeps mtime → no rescans).
   `force: true` bypasses.
+- **Embedded identity metadata**: Shoko reads `AssemblyMetadata` attributes off
+  the plugin DLL (`PackageID`, `PackageName`, `PackageOverview`,
+  `RuntimeIdentifier`, `ReleaseChannel`, `ReleaseDate`, `SourceRevision`,
+  `ReleaseTag`, `RepositoryUrl`). Without `PackageID` it warns
+  "Plugin does not have embedded identity metadata". The csproj stamps the
+  static identity via `<AssemblyMetadata>` items and git provenance via the
+  `StampGitMetadata` target (mirrors ShokoRelay). **Gotcha**: the target must
+  hook `BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo"` — hooking
+  `CoreGenerateAssemblyInfo` is too late, the SDK has already captured
+  `@(AssemblyMetadata)`. `RuntimeIdentifier` and `ReleaseChannel` are
+  conditional on `$(RuntimeIdentifier)` / `$(RELEASE_CHANNEL)`, which the
+  workflow's Publish step sets.
 
 ## Caveats & observations
 

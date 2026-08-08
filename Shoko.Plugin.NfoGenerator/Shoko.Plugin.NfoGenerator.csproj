@@ -8,6 +8,8 @@
     <RootNamespace>Shoko.Plugin.NfoGenerator</RootNamespace>
     <AssemblyName>Shoko.Plugin.NfoGenerator</AssemblyName>
     <Version>0.1.0</Version>
+    <Authors>Baine</Authors>
+    <RepositoryUrl>https://github.com/Baine/shoko-nfo-generator</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +19,46 @@
   <ItemGroup>
     <InternalsVisibleTo Include="NfoGenerator.SelfCheck" />
   </ItemGroup>
+
+  <!-- Embedded identity metadata that Shoko reads at plugin load time. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="PackageID" Value="5c5482c1-3dd0-49cb-b862-d57e305da353" />
+    <AssemblyMetadata Include="PackageName" Value="NFO Generator" />
+    <AssemblyMetadata Include="PackageOverview" Value="Generates Kodi-style NFO files and artwork sidecars next to your video files whenever a release is matched by Shoko." />
+    <AssemblyMetadata Include="RuntimeIdentifier" Value="$(RuntimeIdentifier)" Condition="'$(RuntimeIdentifier)' != ''" />
+    <AssemblyMetadata Include="ReleaseChannel" Value="$(RELEASE_CHANNEL)" Condition="'$(RELEASE_CHANNEL)' != ''" />
+  </ItemGroup>
+
+  <!-- Git provenance stamped at build time. Mirrors ShokoRelay's approach. -->
+  <Target Name="StampGitMetadata" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo" Condition="Exists('$(MSBuildProjectDirectory)\..\.git')">
+    <PropertyGroup Condition="$(OS) == 'Windows_NT'">
+      <GitDateFormat>%%aI</GitDateFormat>
+      <NullStdErr>NUL</NullStdErr>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(OS) != 'Windows_NT'">
+      <GitDateFormat>%aI</GitDateFormat>
+      <NullStdErr>/dev/null</NullStdErr>
+    </PropertyGroup>
+    <Exec Command="git log -1 --format=$(GitDateFormat)" ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitAuthorDateRaw" />
+    </Exec>
+    <Exec Command="git rev-parse HEAD" ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitCommitRaw" />
+    </Exec>
+    <Exec Command="git describe --exact-match --tags --match &quot;v[0-9]*.[0-9]*.[0-9]*&quot; 2>$(NullStdErr)" ConsoleToMsBuild="true" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitTagRaw" />
+    </Exec>
+    <PropertyGroup>
+      <ReleaseDate>$([System.String]::Copy('$(_GitAuthorDateRaw)').Trim())</ReleaseDate>
+      <SourceRevision>$([System.String]::Copy('$(_GitCommitRaw)').Trim())</SourceRevision>
+      <ReleaseTag>$([System.String]::Copy('$(_GitTagRaw)').Trim())</ReleaseTag>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyMetadata Include="ReleaseDate" Value="$(ReleaseDate)" Condition="'$(ReleaseDate)' != ''" />
+      <AssemblyMetadata Include="SourceRevision" Value="$(SourceRevision)" Condition="'$(SourceRevision)' != ''" />
+      <AssemblyMetadata Include="ReleaseTag" Value="$(ReleaseTag)" Condition="'$(ReleaseTag)' != ''" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" ExcludeAssets="runtime" />
