@@ -4,10 +4,11 @@ A [Shoko](https://shokoanime.com/) server plugin that generates [Kodi-style](htt
 
 ## Features
 
-- Generates `movie.nfo` / `tvshow.nfo` / `episode.nfo` Kodi NFO files directly inside your import folders, next to the video file.
+- Generates `movie.nfo` / `tvshow.nfo` / `episode.nfo` Kodi NFO files in Kodi-style locations: episode NFOs next to their video files, and TV-show NFOs/artwork at the resolved show root.
 - Writes artwork sidecars (`thumb.jpg`, `poster.jpg`, `fanart.jpg`) from Shoko's cached images.
 - Runs automatically when a release is matched on import (`Generate On Import`) and when series metadata is updated (`Generate On Metadata Update`).
 - Configurable language fallback for titles and descriptions, including Shoko's preferred title and original-language sources.
+- Adds TMDB provider IDs and uses Shoko's TMDB episode mapping for season/episode numbers when available.
 - Content-aware writes: files that are already up to date are not rewritten, so media libraries are not rescanned needlessly. Metadata updates force a rewrite regardless.
 - On-demand regeneration via plugin API triggers (per series, episode, import folder, or entire library).
 

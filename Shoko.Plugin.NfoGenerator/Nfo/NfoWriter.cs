@@ -19,6 +19,7 @@ public sealed class EpisodeNfo
     public int? Votes;
     public string? AnidbId;
     public string? ShokoId;
+    public string? TmdbId;
     public string? Thumb;
 }
 
@@ -38,6 +39,7 @@ public sealed class ShowNfo
     public int? Votes;
     public string? AnidbId;
     public string? ShokoId;
+    public string? TmdbId;
     public IReadOnlyList<string> Genres = [];
     public IReadOnlyList<string> Studios = [];
 
@@ -68,7 +70,8 @@ internal static class NfoWriter
             El("runtime", n.RuntimeMinutes),
             El("rating", n.Rating),
             El("votes", n.Votes),
-            UniqueId("anidb", n.AnidbId, isDefault: true),
+            UniqueId("tmdb", n.TmdbId, isDefault: n.TmdbId is not null),
+            UniqueId("anidb", n.AnidbId, isDefault: n.TmdbId is null),
             UniqueId("shoko", n.ShokoId),
             El("thumb", n.Thumb));
         return new XDocument(new XDeclaration("1.0", "utf-8", null), root);
@@ -87,7 +90,8 @@ internal static class NfoWriter
             El("runtime", n.RuntimeMinutes),
             n.Studios.Select(s => new XElement("studio", s)),
             n.Genres.Select(g => new XElement("genre", g)),
-            UniqueId("anidb", n.AnidbId, isDefault: true),
+            UniqueId("tmdb", n.TmdbId, isDefault: n.TmdbId is not null),
+            UniqueId("anidb", n.AnidbId, isDefault: n.TmdbId is null),
             UniqueId("shoko", n.ShokoId),
             BuildArt(n.Art));
         return new XDocument(new XDeclaration("1.0", "utf-8", null), root);
@@ -167,11 +171,12 @@ internal static class NfoWriter
             Votes = 1200,
             AnidbId = "11294",
             ShokoId = "42",
+            TmdbId = "42509",
             Thumb = "thumb.jpg",
         };
         var episodePath = Path.Combine(outputDir, "episode.nfo");
         WriteEpisode(episodePath, episode);
-        AssertValid(episodePath, "episodedetails", "Re:Zero kara Hajimeru Isekai Seikatsu", "aired", "2016-04-04", "11294");
+        AssertValid(episodePath, "episodedetails", "Re:Zero kara Hajimeru Isekai Seikatsu", "aired", "2016-04-04", "11294", "42509");
 
         var show = new ShowNfo
         {
@@ -185,17 +190,18 @@ internal static class NfoWriter
             Votes = 1200,
             AnidbId = "11294",
             ShokoId = "42",
+            TmdbId = "64251",
             Genres = ["Drama", "Fantasy"],
             Studios = ["White Fox"],
             Art = new Dictionary<string, string> { ["poster"] = "poster.jpg", ["fanart"] = "fanart.jpg" },
         };
         var showPath = Path.Combine(outputDir, "show.nfo");
         WriteTvShow(showPath, show);
-        AssertValid(showPath, "tvshow", "Re:Zero Starting Life in Another World", "year", "2016", "11294");
+        AssertValid(showPath, "tvshow", "Re:Zero Starting Life in Another World", "year", "2016", "11294", "64251");
 
         var moviePath = Path.Combine(outputDir, "movie.nfo");
         WriteMovie(moviePath, show);
-        AssertValid(moviePath, "movie", "Re:Zero Starting Life in Another World", "year", "2016", "11294");
+        AssertValid(moviePath, "movie", "Re:Zero Starting Life in Another World", "year", "2016", "11294", "64251");
 
         // Content check: unchanged data must not rewrite the file, changed data must.
         if (WriteEpisode(episodePath, episode))
@@ -209,7 +215,7 @@ internal static class NfoWriter
         Console.WriteLine("OK content-check");
     }
 
-    private static void AssertValid(string path, string rootElement, string title, string dateElement, string expectedDate, string anidbId)
+    private static void AssertValid(string path, string rootElement, string title, string dateElement, string expectedDate, string anidbId, string tmdbId)
     {
         var doc = XDocument.Load(path);
         var root = doc.Root ?? throw new InvalidOperationException($"{path}: missing root element");
@@ -222,6 +228,9 @@ internal static class NfoWriter
         var uniqueId = root.Elements("uniqueid").FirstOrDefault(el => (string?)el.Attribute("type") == "anidb");
         if (uniqueId?.Value != anidbId)
             throw new InvalidOperationException($"{path}: anidb uniqueid mismatch");
+        var tmdbIdElement = root.Elements("uniqueid").FirstOrDefault(el => (string?)el.Attribute("type") == "tmdb");
+        if (tmdbIdElement?.Value != tmdbId || (string?)tmdbIdElement.Attribute("default") != "true")
+            throw new InvalidOperationException($"{path}: tmdb uniqueid mismatch");
         Console.WriteLine($"OK {Path.GetFileName(path)}");
     }
 }

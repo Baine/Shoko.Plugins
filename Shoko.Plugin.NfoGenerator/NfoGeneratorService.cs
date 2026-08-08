@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Metadata.Tmdb.CrossReferences;
 using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Abstractions.Metadata.Events;
@@ -209,18 +210,22 @@ public sealed class NfoGeneratorService : IHostedService
         {
             if (!allowFolderArt)
                 return false;
-            return NfoWriter.WriteMovie(Path.Combine(folder, "movie.nfo"), BuildShowNfo(series, series.Episodes.FirstOrDefault(), SidecarWriter.WriteFolderArt(folder, series), cfg), force);
+            return NfoWriter.WriteMovie(Path.Combine(folder, "movie.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(folder, series), cfg, ResolveTmdbMovieId(series, episode)), force);
         }
 
         if (episode is null)
             return false;
 
+        var showId = ResolveTmdbShowId(series, episode);
+        var showFolder = ResolveShowFolder(folder, series, showId);
         var thumb = SidecarWriter.WriteThumb(folder, episode);
         bool episodeWritten = NfoWriter.WriteEpisode(Path.ChangeExtension(file.Path, ".nfo"), BuildEpisodeNfo(episode, series, thumb, cfg), force);
 
-        if (!allowFolderArt)
+        if (!allowFolderArt || (showId is not null && IsShowFolderShared(showFolder, showId.Value)))
             return episodeWritten;
-        bool showWritten = NfoWriter.WriteTvShow(Path.Combine(folder, "tvshow.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(folder, series), cfg), force);
+        bool showWritten = NfoWriter.WriteTvShow(Path.Combine(showFolder, "tvshow.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(showFolder, series), cfg, showId), force);
+        if (showId is not null)
+            SweepMisplacedShowNfos(showFolder, showId.Value);
         return episodeWritten || showWritten;
     }
 
@@ -241,24 +246,127 @@ public sealed class NfoGeneratorService : IHostedService
         return series.Type == AnimeType.Movie;
     }
 
+    private static ITmdbEpisodeCrossReference? SelectTmdbEpisodeCrossReference(IShokoEpisode episode)
+        => episode.TmdbEpisodeCrossReferences
+            .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
+            .ThenBy(x => x.Ordering)
+            .ThenBy(x => x.TmdbEpisodeID)
+            .FirstOrDefault();
+
+    private static ITmdbMovieCrossReference? SelectTmdbMovieCrossReference(IEnumerable<ITmdbMovieCrossReference> references)
+        => references
+            .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
+            .ThenBy(x => x.TmdbMovieID)
+            .FirstOrDefault();
+
+    private static int? ResolveTmdbShowId(IShokoSeries series, IShokoEpisode episode)
+        => SelectTmdbEpisodeCrossReference(episode)?.TmdbShowID
+            ?? series.TmdbShowCrossReferences
+                .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
+                .ThenBy(x => x.TmdbShowID)
+                .Select(x => (int?)x.TmdbShowID)
+                .FirstOrDefault();
+
+    private static int? ResolveTmdbMovieId(IShokoSeries series, IShokoEpisode? episode)
+        => (episode is null ? null : SelectTmdbMovieCrossReference(episode.TmdbMovieCrossReferences)?.TmdbMovieID)
+            ?? SelectTmdbMovieCrossReference(series.TmdbMovieCrossReferences)?.TmdbMovieID;
+
+    /// <summary>
+    /// Resolves a conventional show root without moving media. Multiple local
+    /// Shoko series may represent seasons of the same TMDB show, so their file
+    /// directories are considered together, but only inside the same managed
+    /// folder as the current file.
+    /// </summary>
+    private string ResolveShowFolder(string fileFolder, IShokoSeries series, int? tmdbShowId)
+    {
+        if (tmdbShowId is null)
+            return fileFolder;
+
+        var managedFolder = _videoService.GetAllManagedFolders()
+            .Where(f => IsPathWithin(fileFolder, f.Path))
+            .OrderByDescending(f => f.Path.Length)
+            .FirstOrDefault();
+        if (managedFolder is null)
+            return fileFolder;
+
+        var folders = _metadataService.GetAllShokoSeries()
+            .Where(s => s.TmdbShowCrossReferences.Any(x => x.TmdbShowID == tmdbShowId))
+            .SelectMany(s => s.Episodes.OfType<IShokoEpisode>())
+            .SelectMany(e => e.VideoList)
+            .SelectMany(v => v.Files)
+            .Where(f => f.IsAvailable && Path.GetDirectoryName(f.Path) is not null)
+            .Select(f => Path.GetDirectoryName(f.Path)!)
+            .Where(path => IsPathWithin(path, managedFolder.Path))
+            .Append(fileFolder)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var common = CommonDirectory(folders);
+        if (folders.Count > 1 && common is not null && !PathsEqual(common, managedFolder.Path))
+            return common;
+
+        // A lone populated season folder cannot yield a common parent. Apply a
+        // narrow, conventional-name heuristic rather than promoting the media
+        // library root to a show root.
+        if (LooksLikeSeasonFolder(fileFolder) && Path.GetDirectoryName(fileFolder) is { } parent && !PathsEqual(parent, managedFolder.Path))
+            return parent;
+        return fileFolder;
+    }
+
+    private static string? CommonDirectory(IReadOnlyList<string> directories)
+    {
+        if (directories.Count == 0)
+            return null;
+        var common = Path.GetFullPath(directories[0]).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        foreach (var directory in directories.Skip(1))
+        {
+            var candidate = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            while (!IsPathWithin(candidate, common))
+            {
+                common = Path.GetDirectoryName(common) ?? "";
+                if (string.IsNullOrEmpty(common))
+                    return null;
+            }
+        }
+        return common;
+    }
+
+    private static bool LooksLikeSeasonFolder(string path)
+        => Path.GetFileName(path).StartsWith("season", StringComparison.OrdinalIgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(path), "^s\\d{1,2}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static bool IsPathWithin(string path, string root)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        return relative == "." || (!relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) && relative != "..");
+    }
+
+    private static bool PathsEqual(string left, string right)
+        => string.Equals(Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+
     private static EpisodeNfo BuildEpisodeNfo(IShokoEpisode episode, IShokoSeries series, string? thumb, NfoGeneratorSettings cfg)
-        => new()
+    {
+        var tmdbEpisode = SelectTmdbEpisodeCrossReference(episode);
+        var ordering = tmdbEpisode?.TmdbEpisode?.PreferredOrdering ?? tmdbEpisode?.TmdbEpisode?.Ordering;
+        return new()
         {
             Title = LanguageResolver.Title(episode, cfg.TitleLanguage),
             ShowTitle = LanguageResolver.Title(series, cfg.TitleLanguage),
             Plot = LanguageResolver.Description(episode, cfg.DescriptionLanguage) ?? LanguageResolver.Description(series, cfg.DescriptionLanguage),
             Aired = episode.AirDate?.ToString("yyyy-MM-dd"),
-            Season = episode.SeasonNumber,
-            Episode = episode.EpisodeNumber,
+            Season = ordering?.SeasonNumber ?? episode.SeasonNumber,
+            Episode = ordering?.EpisodeNumber ?? episode.EpisodeNumber,
             RuntimeMinutes = RuntimeMinutes(episode.Runtime),
             Rating = PositiveRating(episode.Rating),
             Votes = PositiveVotes(episode.RatingVotes),
             AnidbId = episode.AnidbEpisodeID.ToString(),
             ShokoId = episode.ID.ToString(),
+            TmdbId = tmdbEpisode?.TmdbEpisodeID.ToString(),
             Thumb = thumb,
         };
+    }
 
-    private static ShowNfo BuildShowNfo(IShokoSeries series, IShokoEpisode? episode, IReadOnlyDictionary<string, string> art, NfoGeneratorSettings cfg)
+    private static ShowNfo BuildShowNfo(IShokoSeries series, IShokoEpisode? episode, IReadOnlyDictionary<string, string> art, NfoGeneratorSettings cfg, int? tmdbId)
     {
         var airDate = series.AirDate;
         return new ShowNfo
@@ -273,17 +381,15 @@ public sealed class NfoGeneratorService : IHostedService
             Votes = PositiveVotes(series.RatingVotes),
             AnidbId = series.AnidbAnimeID.ToString(),
             ShokoId = series.ID.ToString(),
+            TmdbId = tmdbId?.ToString(),
             Studios = series.Studios.Select(s => s.Name).ToList(),
             Art = art,
         };
     }
 
-    // ponytail: tvshow/movie folder art is written in the same folder as the
-    // video; on delete we only remove the per-file episode NFO. Stale tvshow.nfo
-    // / movie.nfo / thumb.jpg may remain when the last file of a folder is
-    // removed. Revisit if folder-level cleanup is wanted.
-    // ponytail: no scheduled sweep; folder-level artifacts are only cleaned
-    // when a delete or relocation leaves the folder with no live video files.
+    // Folder-level artifacts are cleaned when a delete or relocation leaves a
+    // folder empty. Legacy plugin tvshow.nfo files inside season directories
+    // are additionally swept after a TMDB show-root NFO is generated.
     private void DeleteNfosForRelease(IVideo video)
     {
         foreach (var file in video.Files.Where(f => f.IsAvailable))
@@ -419,6 +525,49 @@ public sealed class NfoGeneratorService : IHostedService
             .Distinct()
             .ToList();
         return seriesIds.Count > 1;
+    }
+
+    /// <summary>
+    /// A show root may contain only season folders, so the older direct-child
+    /// guard is insufficient there. Do not write root-level metadata when any
+    /// live file below it belongs to another (or unmapped) TMDB show.
+    /// </summary>
+    private bool IsShowFolderShared(string folder, int tmdbShowId)
+        => _videoService.GetAllVideoFiles()
+            .Where(f => f.IsAvailable && IsPathWithin(f.Path, folder))
+            .Any(f => f.Video?.Episodes.FirstOrDefault()?.Series is not { } series
+                || !series.TmdbShowCrossReferences.Any(x => x.TmdbShowID == tmdbShowId));
+
+    /// <summary>
+    /// Removes legacy plugin-generated tvshow.nfo files below a resolved show
+    /// root. It only touches directories whose directly contained live videos
+    /// all map to this TMDB show; user-authored and unrelated NFOs are left
+    /// intact.
+    /// </summary>
+    private void SweepMisplacedShowNfos(string showFolder, int tmdbShowId)
+    {
+        try
+        {
+            foreach (var nfoPath in Directory.EnumerateFiles(showFolder, "tvshow.nfo", SearchOption.AllDirectories))
+            {
+                if (!IsPluginNfo(nfoPath))
+                    continue;
+                var folder = Path.GetDirectoryName(nfoPath);
+                if (folder is null)
+                    continue;
+                var directFiles = _videoService.GetVideoFilesByAbsolutePath(folder)
+                    .Where(f => string.Equals(Path.GetDirectoryName(f.Path), folder, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (directFiles.Count > 0 && directFiles.All(f => f.Video?.Episodes.FirstOrDefault()?.Series?.TmdbShowCrossReferences.Any(x => x.TmdbShowID == tmdbShowId) == true))
+                    TryDelete(nfoPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static void TryDelete(string path)

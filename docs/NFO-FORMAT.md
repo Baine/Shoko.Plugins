@@ -1,6 +1,6 @@
 # NFO format
 
-The plugin writes [Kodi NFO files](https://kodi.wiki/view/NFO_files) directly into the folder of each video file, plus local artwork sidecars copied from Shoko's image cache.
+The plugin writes [Kodi NFO files](https://kodi.wiki/view/NFO_files) and local artwork sidecars copied from Shoko's image cache. Episode NFOs are written next to their video files. TV-show NFOs and show artwork are written at the resolved show root, rather than inside a season directory.
 
 Files are only rewritten when the generated content actually differs from what is already on disk (the file itself is the cache). This keeps file timestamps stable and avoids pointless media-library rescans. Metadata updates always force a rewrite.
 
@@ -9,10 +9,12 @@ Files are only rewritten when the generated content actually differs from what i
 | Video type | NFO | Root element | Art sidecars |
 | --- | --- | --- | --- |
 | Series / TV episode | `episode.nfo` | `<episodedetails>` | `thumb.jpg` |
-| Series (shared) | `tvshow.nfo` | `<tvshow>` | `poster.jpg`, `fanart.jpg` |
+| Series / TV show root | `tvshow.nfo` | `<tvshow>` | `poster.jpg`, `fanart.jpg` |
 | Movie | `movie.nfo` | `<movie>` | `thumb.jpg` |
 
 Art sidecars are copied only when Shoko has the artwork locally; otherwise the corresponding `<art>` entries are omitted.
+
+For a TMDB-linked show, the show root is the deepest shared directory of local files mapped to that TMDB show, within one managed folder. This allows multiple Shoko series representing TMDB seasons to share one `tvshow.nfo`. When only one conventional `Season ...`/`S01` folder exists, its parent is used. If no safe root can be determined, the video folder is retained.
 
 ## Movie vs. TV show
 
@@ -37,7 +39,8 @@ If a series is linked to a TMDB show instead, it is written as a TV show regardl
   <runtime>25</runtime>
   <rating>8.05</rating>
   <votes>1200</votes>
-  <uniqueid type="anidb" default="true">11294</uniqueid>
+  <uniqueid type="tmdb" default="true">42509</uniqueid>
+  <uniqueid type="anidb">11294</uniqueid>
   <uniqueid type="shoko">42</uniqueid>
   <thumb>thumb.jpg</thumb>
 </episodedetails>
@@ -59,7 +62,8 @@ If a series is linked to a TMDB show instead, it is written as a TV show regardl
   <studio>White Fox</studio>
   <genre>Drama</genre>
   <genre>Fantasy</genre>
-  <uniqueid type="anidb" default="true">11294</uniqueid>
+  <uniqueid type="tmdb" default="true">64251</uniqueid>
+  <uniqueid type="anidb">11294</uniqueid>
   <uniqueid type="shoko">42</uniqueid>
   <art>
     <poster>poster.jpg</poster>
@@ -75,5 +79,7 @@ Identical to the TV show layout but with a `<movie>` root element.
 ## Notes
 
 - All files are UTF-8 without a BOM.
-- `uniqueid` includes AniDB (default) and Shoko IDs so Kodi can match the content.
+- `uniqueid` includes TMDB when Shoko has a mapping, plus AniDB and Shoko IDs. TMDB is the default identifier when present; AniDB remains the default fallback.
+- For TMDB-mapped episodes, the emitted season and episode numbers follow the mapped TMDB ordering.
+- A generation pass removes old plugin-generated `tvshow.nfo` files from season folders once the same TMDB show's root NFO has been written. User-authored NFOs are not removed.
 - Empty/null fields are omitted entirely.
