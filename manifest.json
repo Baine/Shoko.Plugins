@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.2",
+      "tag": "v0.1.2",
+      "source_revision": "4aaa14cb4420c707a249afbef08d3bfe9c8adbc7",
+      "released_at": "2026-08-08T09:21:14Z",
+      "channel": "Stable",
+      "release_notes": "Adds a settings page for the plugin in the Shoko WebUI.\n\n**Changes:**\n- The plugin now implements `IPlugin.GetPages()`, so an \"NFO Generator\" section with a Settings page appears under Settings → Plugins in the WebUI (embedded as an iframe)\n- The page reads and writes the plugin configuration through Shoko's Configuration API: title/description language preferences and the generate-on-import / generate-on-metadata-update toggles\n- A \"Regenerate library\" button triggers NFO generation for the whole library on demand\n- Settings continue to be stored and validated by Shoko itself — no new server-side persistence",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.2/NfoGenerator-v0.1.2_linux-arm64.zip",
+          "checksum": "51b14eb20df4c3d34b2aecc5768f91c3d90b84a1b770bc933cdba27944be082f"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.2/NfoGenerator-v0.1.2_linux-x64.zip",
+          "checksum": "6f20887a606804f9f128a6840ce5046c2332887c64683d6ff32d1a9a9c524269"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.2/NfoGenerator-v0.1.2_win-x64.zip",
+          "checksum": "55583eb4dca6cda603fa302c9b721b4587debf1d1cd95478b6cb16af756099f7"
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "tag": "v0.1.1",
       "source_revision": "6aca649a7f321f336b516a09f6c6a55ae222716e",
