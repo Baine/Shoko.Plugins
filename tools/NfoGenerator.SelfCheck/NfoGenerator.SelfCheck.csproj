@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Shoko.Plugin.NfoGenerator\Shoko.Plugin.NfoGenerator.csproj" />
     <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.77" />
+    <PackageReference Include="Shoko.QueueProcessor" Version="6.0.0-alpha.6" />
   </ItemGroup>
 
 </Project>

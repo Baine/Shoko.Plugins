@@ -64,6 +64,7 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" ExcludeAssets="runtime" />
     <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.77" ExcludeAssets="runtime" />
+    <PackageReference Include="Shoko.QueueProcessor" Version="6.0.0-alpha.6" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>

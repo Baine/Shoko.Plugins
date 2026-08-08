@@ -10,7 +10,9 @@ using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Plugin.NfoGenerator.Config;
+using Shoko.Plugin.NfoGenerator.Jobs;
 using Shoko.Plugin.NfoGenerator.Nfo;
+using Shoko.QueueProcessor.Abstractions;
 
 namespace Shoko.Plugin.NfoGenerator;
 
@@ -27,22 +29,22 @@ public sealed class NfoGeneratorService : IHostedService
     private readonly ConfigurationProvider<NfoGeneratorSettings> _settings;
     private readonly IMetadataService _metadataService;
     private readonly IVideoService _videoService;
+    private readonly IQueueScheduler _queueScheduler;
     private readonly ILogger<NfoGeneratorService> _logger;
-    // ponytail: one global gate; use keyed queues only if serialized generation
-    // becomes a measurable throughput problem after imports have settled.
-    private readonly SemaphoreSlim _generationGate = new(1, 1);
 
     public NfoGeneratorService(
         IVideoReleaseService releaseService,
         ConfigurationProvider<NfoGeneratorSettings> settings,
         IMetadataService metadataService,
         IVideoService videoService,
+        IQueueScheduler queueScheduler,
         ILogger<NfoGeneratorService> logger)
     {
         _releaseService = releaseService;
         _settings = settings;
         _metadataService = metadataService;
         _videoService = videoService;
+        _queueScheduler = queueScheduler;
         _logger = logger;
     }
 
@@ -68,7 +70,7 @@ public sealed class NfoGeneratorService : IHostedService
     {
         if (!_settings.Load().GenerateOnImport)
             return;
-        RunFromEvent(() => GenerateForVideos([e.Video], force: false), "generate NFO files for video {VideoID}", e.Video.ID);
+        Queue(job => { job.Kind = NfoGenerationKind.Video; job.ID = e.Video.ID; });
     }
 
     private void OnSeriesUpdated(object? sender, SeriesInfoUpdatedEventArgs e)
@@ -79,46 +81,45 @@ public sealed class NfoGeneratorService : IHostedService
             return;
         // Metadata updates rewrite even unchanged files so the media library
         // sees a fresh mtime after a metadata change.
-        RunFromEvent(() => GenerateForSeriesCore(series, force: true), "generate NFO files for series {SeriesID}", series.ID);
+        Queue(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.ID; job.Force = true; });
     }
 
     private void OnReleaseDeleted(object? sender, VideoReleaseDeletedEventArgs e)
     {
-        if (e.Video is not { } video)
-            return;
-        RunFromEvent(() => DeleteNfosForRelease(video), "remove NFO files for video {VideoID}", video.ID);
+        if (e.Video is { } video)
+            foreach (var path in video.Files.Select(f => f.Path))
+                Queue(job => { job.Kind = NfoGenerationKind.Delete; job.PreviousPath = path; });
     }
 
     private void OnVideoFileRelocated(object? sender, VideoFileRelocatedEventArgs e)
     {
         if (!_settings.Load().GenerateOnImport)
             return;
-        RunFromEvent(() =>
-        {
-            DeleteNfo(e.PreviousPath);
-            SweepFolder(Path.GetDirectoryName(e.PreviousPath));
-            GenerateForFiles([e.File], force: false);
-        }, "generate NFO files for relocated file {FilePath}", e.File.Path);
+        Queue(job => { job.Kind = NfoGenerationKind.Relocated; job.ID = e.File.ID; job.PreviousPath = e.PreviousPath; });
     }
 
     /// <summary>Generates NFO files for every available video file of a series.</summary>
     public int GenerateForSeries(IShokoSeries series, bool force = false)
-        => RunExclusive(() => GenerateForSeriesCore(series, force));
+        => GenerateForSeriesCore(series, force);
 
     private int GenerateForSeriesCore(IShokoSeries series, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true, LibraryIndex? libraryIndex = null)
         => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force, showFolders, sharedShowFolders, sweep, libraryIndex);
 
     /// <summary>Generates NFO files for every available video file of an episode.</summary>
     public int GenerateForEpisode(IShokoEpisode episode, bool force = false)
-        => RunExclusive(() => GenerateForVideos(episode.VideoList, force));
+        => GenerateForVideos(episode.VideoList, force);
+
+    /// <summary>Generates NFO files for every available video file of a video.</summary>
+    public int GenerateForVideo(IVideo video, bool force = false)
+        => GenerateForFiles(video.Files, force);
 
     /// <summary>Generates NFO files for every available video file inside an import folder.</summary>
     public int GenerateForFolder(IManagedFolder folder, bool force = false)
-        => RunExclusive(() => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force));
+        => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force);
 
     /// <summary>Generates NFO files for the entire library, then sweeps orphan NFO/art files.</summary>
     public LibraryCheckResult GenerateForLibrary(bool force = false)
-        => RunExclusive(() => GenerateForLibraryCore(force));
+        => GenerateForLibraryCore(force);
 
     private LibraryCheckResult GenerateForLibraryCore(bool force)
     {
@@ -141,41 +142,19 @@ public sealed class NfoGeneratorService : IHostedService
         return new LibraryCheckResult(count, removed);
     }
 
-    private T RunExclusive<T>(Func<T> action)
+    private void Queue(Action<NfoGenerationJob> configure)
+        => _ = QueueAsync(configure);
+
+    private async Task QueueAsync(Action<NfoGenerationJob> configure)
     {
-        _generationGate.Wait();
         try
         {
-            return action();
+            await _queueScheduler.Enqueue(configure);
         }
-        finally
+        catch (Exception ex)
         {
-            _generationGate.Release();
+            _logger.LogError(ex, "Unable to queue NFO generation");
         }
-    }
-
-    private void RunFromEvent(Action action, string failureMessage, params object[] args)
-    {
-        _ = Task.Run(() =>
-        {
-            if (!_generationGate.Wait(0))
-            {
-                _logger.LogDebug("Skipping NFO event because a generation is already in progress");
-                return;
-            }
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, failureMessage, args);
-            }
-            finally
-            {
-                _generationGate.Release();
-            }
-        });
     }
 
     private int GenerateForVideos(IEnumerable<IVideo> videos, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true, LibraryIndex? libraryIndex = null)
@@ -408,13 +387,16 @@ public sealed class NfoGeneratorService : IHostedService
     // Folder-level artifacts are cleaned when a delete or relocation leaves a
     // folder empty. Legacy plugin tvshow.nfo files inside season directories
     // are additionally swept after a TMDB show-root NFO is generated.
-    private void DeleteNfosForRelease(IVideo video)
+    public void DeleteForPath(string videoPath)
     {
-        foreach (var file in video.Files.Where(f => f.IsAvailable))
-        {
-            DeleteNfo(file.Path);
-            SweepFolder(Path.GetDirectoryName(file.Path));
-        }
+        DeleteNfo(videoPath);
+        SweepFolder(Path.GetDirectoryName(videoPath));
+    }
+
+    public void GenerateForRelocatedFile(IVideoFile file, string previousPath)
+    {
+        DeleteForPath(previousPath);
+        GenerateForFiles([file], force: false);
     }
 
     private static void DeleteNfo(string videoPath)

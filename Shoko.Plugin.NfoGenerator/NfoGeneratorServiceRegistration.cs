@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Config.Services;
 using Shoko.Abstractions.Plugin;
 using Shoko.Plugin.NfoGenerator.Config;
+using Shoko.Plugin.NfoGenerator.Jobs;
+using Shoko.QueueProcessor;
 
 namespace Shoko.Plugin.NfoGenerator;
 
@@ -18,5 +20,6 @@ public sealed class NfoGeneratorServiceRegistration : IPluginServiceRegistration
 
         serviceCollection.AddSingleton<NfoGeneratorService>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<NfoGeneratorService>());
+        serviceCollection.AddQueueJobsFromAssembly(typeof(NfoGenerationJob).Assembly);
     }
 }

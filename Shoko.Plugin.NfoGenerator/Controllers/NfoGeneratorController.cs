@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Video.Services;
+using Shoko.Plugin.NfoGenerator.Jobs;
+using Shoko.QueueProcessor.Abstractions;
 
 namespace Shoko.Plugin.NfoGenerator;
 
@@ -16,50 +18,53 @@ namespace Shoko.Plugin.NfoGenerator;
 [Authorize(Policy = "admin")]
 public sealed class NfoGeneratorController : ControllerBase
 {
-    private readonly NfoGeneratorService _service;
     private readonly IMetadataService _metadataService;
     private readonly IVideoService _videoService;
+    private readonly IQueueScheduler _queueScheduler;
 
-    public NfoGeneratorController(NfoGeneratorService service, IMetadataService metadataService, IVideoService videoService)
+    public NfoGeneratorController(IMetadataService metadataService, IVideoService videoService, IQueueScheduler queueScheduler)
     {
-        _service = service;
         _metadataService = metadataService;
         _videoService = videoService;
+        _queueScheduler = queueScheduler;
     }
 
     /// <summary>Regenerates all NFO files for a series.</summary>
     [HttpPost("series/{seriesID}")]
-    public IActionResult GenerateSeries(int seriesID)
+    public async Task<IActionResult> GenerateSeries(int seriesID)
     {
         if (_metadataService.GetShokoSeriesByID(seriesID) is not { } series)
             return NotFound(new { status = "error", message = $"Series {seriesID} not found" });
-        return Ok(new { status = "ok", generated = _service.GenerateForSeries(series) });
+        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.ID; });
+        return Ok(new { status = "ok" });
     }
 
     /// <summary>Regenerates all NFO files for an episode.</summary>
     [HttpPost("episode/{episodeID}")]
-    public IActionResult GenerateEpisode(int episodeID)
+    public async Task<IActionResult> GenerateEpisode(int episodeID)
     {
         if (_metadataService.GetShokoEpisodeByID(episodeID) is not { } episode)
             return NotFound(new { status = "error", message = $"Episode {episodeID} not found" });
-        return Ok(new { status = "ok", generated = _service.GenerateForEpisode(episode) });
+        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Episode; job.ID = episode.ID; });
+        return Ok(new { status = "ok" });
     }
 
     /// <summary>Regenerates all NFO files inside an import folder.</summary>
     [HttpPost("folder/{folderID}")]
-    public IActionResult GenerateFolder(int folderID)
+    public async Task<IActionResult> GenerateFolder(int folderID)
     {
         if (_videoService.GetManagedFolderByID(folderID) is not { } folder)
             return NotFound(new { status = "error", message = $"Folder {folderID} not found" });
-        return Ok(new { status = "ok", generated = _service.GenerateForFolder(folder) });
+        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Folder; job.ID = folder.ID; });
+        return Ok(new { status = "ok" });
     }
 
     /// <summary>Regenerates NFO files for the entire library and sweeps orphan NFO/art files.</summary>
     [HttpPost("library")]
-    public IActionResult GenerateLibrary()
+    public async Task<IActionResult> GenerateLibrary()
     {
-        var result = _service.GenerateForLibrary();
-        return Ok(new { status = "ok", generated = result.Written, removed = result.Removed });
+        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => job.Kind = NfoGenerationKind.Library);
+        return Ok(new { status = "ok" });
     }
 
     /// <summary>
@@ -195,7 +200,7 @@ public sealed class NfoGeneratorController : ControllerBase
               const res = await fetch('/api/plugin/NfoGenerator/library', { method: 'POST', headers: headers() });
               if (!res.ok) return setStatus(`Regenerate failed (${res.status}).`, 'error');
               const data = await res.json();
-              setStatus(`Done — ${data.generated} NFO file(s) written, ${data.removed} orphan file(s) removed.`, 'ok');
+              setStatus('Done.', 'ok');
             });
 
             loadConfig().catch(err => setStatus(err.message, 'error'));

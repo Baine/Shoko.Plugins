@@ -2,11 +2,13 @@ using Shoko.Abstractions.Metadata;
 using Shoko.Abstractions.Metadata.Containers;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Plugin.NfoGenerator.Config;
+using Shoko.Plugin.NfoGenerator.Jobs;
 using Shoko.Plugin.NfoGenerator.Nfo;
 
 var outputDir = Path.Combine(Path.GetTempPath(), "nfo-generator-selfcheck");
 NfoWriter.SelfCheck(outputDir);
 LanguageResolverCheck.SelfCheck();
+NfoGenerationJob.SelfCheck();
 Console.WriteLine($"Self-check passed. Output written to {outputDir}");
 
 internal static class LanguageResolverCheck
