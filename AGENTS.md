@@ -29,7 +29,7 @@ serialization/compare logic.
 - **Config**: `Config/NfoGeneratorSettings.cs` is a public `IConfiguration` POCO
   (auto-surfaced in the WebUI). Read via `ConfigurationProvider<NfoGeneratorSettings>`
   in `NfoGeneratorServiceRegistration.cs`.
-- **Triggers**: `Controllers/NfoGeneratorController.cs` — `POST /api/plugin/NfoGenerator/{series|episode|folder|library}`, `[Authorize(Policy = "admin")]`.
+- **Triggers**: `Controllers/NfoGeneratorController.cs` — `POST /api/plugin/NfoGenerator/{series|episode|folder|library}`, `[Authorize(Policy = "admin")]`. The `library` trigger is a full check: regenerate content-stale NFOs, then run the orphan sweep.
 - **WebUI page**: `NfoGeneratorPlugin.GetPages()` exposes a "Settings" page at
   `GET /api/plugin/NfoGenerator/settings` (anonymous, scaffolding only). The WebUI
   embeds it as an iframe under Settings → Plugins. Its JS reads the user's apikey
@@ -38,7 +38,10 @@ serialization/compare logic.
   trigger. Do not put secrets in the page; it is served unauthenticated.
 - **Events**: `NfoGeneratorService` subscribes `ReleaseSaved` (gated by
   `GenerateOnImport`), `SeriesUpdated` (gated by `GenerateOnMetadataUpdate`,
-  runs with `force: true`), `ReleaseDeleted` (deletes per-file episode NFO).
+  runs with `force: true`), `ReleaseDeleted` (removes the per-file episode NFO
+  and sweeps the folder), `VideoFileRelocated` (gated by `GenerateOnImport`:
+  removes the stale NFO at the old path, sweeps the old folder, regenerates at
+  the new path).
 - **Language fallback**: `Config/LanguageResolver.cs` — comma-separated tokens:
   BCP-47 codes (case-insensitive), `shoko` (preferred), `original` (default).
   Falls back to preferred → original → first non-empty.
@@ -89,9 +92,26 @@ serialization/compare logic.
 - **Multiple video files can map to one Shoko episode**; the writer is keyed by
   file ID (`DistinctBy(f => f.ID)`). A multi-episode file writes NFOs for its
   first episode only (ponytail: accepted limitation).
-- **Folder-level artifacts are stale-prone**: on delete only the per-file
-  `episode.nfo` is removed; `tvshow.nfo` / `movie.nfo` / sidecars may linger in a
-  folder after its last file is removed. Marked `ponytail:` in code.
+- **Staleness definition**: an NFO is *content-stale* when its bytes differ from
+  what the plugin would serialize from current Shoko metadata — detected lazily
+  at write time by `NfoWriter.Write` (rewrites only when the text differs;
+  `force: true` always rewrites). An NFO is *orphan-stale* when its owning video
+  file no longer exists at that path: the per-file `episode.nfo` is removed on
+  release delete / relocation, and folder-level artifacts (`tvshow.nfo`,
+  `movie.nfo`, `poster.*`, `fanart.*`, `banner.*`, `logo.*`, `disc.*`,
+  `thumb.*`) are swept only once no live video file remains *directly* in that
+  folder. There is no scheduled sweep; staleness is only acted on when a
+  trigger fires. The `library` trigger also runs a full-library orphan sweep
+  (`SweepLibrary`): it walks every managed folder, deletes per-file
+  `episode.nfo` files whose video file is gone (verified by the embedded Shoko
+  uniqueid, so user-authored NFOs are left alone), and removes folder-level
+  artifacts only in folders with no live video files.
+- **Shared-folder guard**: folder-level NFOs and art are only written when every
+  live file directly in the folder belongs to the same series. Mixed-series
+  folders get per-file `episode.nfo` only, so one series' metadata cannot
+  clobber another series' `tvshow.nfo` / `movie.nfo` / posters (movies in mixed
+  folders get no NFO at all). `IsFolderShared`/`FolderHasVideoFiles` use
+  `IVideoService.GetVideoFilesByAbsolutePath`, filtering to direct children.
 - **Self-check determinism**: `NfoWriter.SelfCheck` deletes/recreates its output
   dir first so a second run passes. Keep it that way.
 - Local reference clones used for API research live outside the repo:

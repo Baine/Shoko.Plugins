@@ -54,10 +54,13 @@ public sealed class NfoGeneratorController : ControllerBase
         return Ok(new { status = "ok", generated = _service.GenerateForFolder(folder) });
     }
 
-    /// <summary>Regenerates NFO files for the entire library.</summary>
+    /// <summary>Regenerates NFO files for the entire library and sweeps orphan NFO/art files.</summary>
     [HttpPost("library")]
-    public IActionResult GenerateLibrary() =>
-        Ok(new { status = "ok", generated = _service.GenerateForLibrary() });
+    public IActionResult GenerateLibrary()
+    {
+        var result = _service.GenerateForLibrary();
+        return Ok(new { status = "ok", generated = result.Written, removed = result.Removed });
+    }
 
     /// <summary>
     /// Serves the settings page shown by the WebUI under Settings → Plugins.
@@ -125,7 +128,7 @@ public sealed class NfoGeneratorController : ControllerBase
 
           <hr />
 
-          <button type="button" id="regenerate" class="secondary">Regenerate library</button>
+          <button type="button" id="regenerate" class="secondary">Check &amp; regenerate library</button>
 
           <div id="status"></div>
 
@@ -192,7 +195,7 @@ public sealed class NfoGeneratorController : ControllerBase
               const res = await fetch('/api/plugin/NfoGenerator/library', { method: 'POST', headers: headers() });
               if (!res.ok) return setStatus(`Regenerate failed (${res.status}).`, 'error');
               const data = await res.json();
-              setStatus(`Done — ${data.generated} NFO file(s) written.`, 'ok');
+              setStatus(`Done — ${data.generated} NFO file(s) written, ${data.removed} orphan file(s) removed.`, 'ok');
             });
 
             loadConfig().catch(err => setStatus(err.message, 'error'));

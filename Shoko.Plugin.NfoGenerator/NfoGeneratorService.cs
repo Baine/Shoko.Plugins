@@ -20,6 +20,8 @@ namespace Shoko.Plugin.NfoGenerator;
 /// </summary>
 public sealed class NfoGeneratorService : IHostedService
 {
+    public readonly record struct LibraryCheckResult(int Written, int Removed);
+
     private readonly IVideoReleaseService _releaseService;
     private readonly ConfigurationProvider<NfoGeneratorSettings> _settings;
     private readonly IMetadataService _metadataService;
@@ -45,6 +47,7 @@ public sealed class NfoGeneratorService : IHostedService
         _releaseService.ReleaseSaved += OnReleaseSaved;
         _releaseService.ReleaseDeleted += OnReleaseDeleted;
         _metadataService.SeriesUpdated += OnSeriesUpdated;
+        _videoService.VideoFileRelocated += OnVideoFileRelocated;
         return Task.CompletedTask;
     }
 
@@ -53,6 +56,7 @@ public sealed class NfoGeneratorService : IHostedService
         _releaseService.ReleaseSaved -= OnReleaseSaved;
         _releaseService.ReleaseDeleted -= OnReleaseDeleted;
         _metadataService.SeriesUpdated -= OnSeriesUpdated;
+        _videoService.VideoFileRelocated -= OnVideoFileRelocated;
         return Task.CompletedTask;
     }
 
@@ -113,6 +117,25 @@ public sealed class NfoGeneratorService : IHostedService
         });
     }
 
+    private void OnVideoFileRelocated(object? sender, VideoFileRelocatedEventArgs e)
+    {
+        if (!_settings.Load().GenerateOnImport)
+            return;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                DeleteNfo(e.PreviousPath);
+                SweepFolder(Path.GetDirectoryName(e.PreviousPath));
+                GenerateForFiles([e.File], force: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate NFO files for relocated file {FilePath}", e.File.Path);
+            }
+        });
+    }
+
     /// <summary>Generates NFO files for every available video file of a series.</summary>
     public int GenerateForSeries(IShokoSeries series, bool force = false)
         => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force);
@@ -125,13 +148,22 @@ public sealed class NfoGeneratorService : IHostedService
     public int GenerateForFolder(IManagedFolder folder, bool force = false)
         => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force);
 
-    /// <summary>Generates NFO files for the entire library.</summary>
-    public int GenerateForLibrary(bool force = false)
+    /// <summary>Generates NFO files for the entire library, then sweeps orphan NFO/art files.</summary>
+    public LibraryCheckResult GenerateForLibrary(bool force = false)
     {
+        var seriesList = _metadataService.GetAllShokoSeries().ToList();
+        var titleLanguage = _settings.Load().TitleLanguage;
+        _logger.LogInformation("Generating NFO files for the entire library: {Count} series", seriesList.Count);
         int count = 0;
-        foreach (var series in _metadataService.GetAllShokoSeries())
+        for (int i = 0; i < seriesList.Count; i++)
+        {
+            var series = seriesList[i];
+            _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", i + 1, seriesList.Count, LanguageResolver.Title(series, titleLanguage), series.ID);
             count += GenerateForSeries(series, force);
-        return count;
+        }
+        _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", count);
+        int removed = SweepLibrary();
+        return new LibraryCheckResult(count, removed);
     }
 
     private int GenerateForVideos(IEnumerable<IVideo> videos, bool force)
@@ -139,16 +171,27 @@ public sealed class NfoGeneratorService : IHostedService
 
     private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force)
     {
+        var targets = files.Where(f => f.IsAvailable && f.Video is not null).DistinctBy(f => f.ID).ToList();
+        _logger.LogInformation("Generating NFO files for {Count} file(s)", targets.Count);
+        var sharedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int written = 0;
-        foreach (var file in files.Where(f => f.IsAvailable && f.Video is not null).DistinctBy(f => f.ID))
+        for (int i = 0; i < targets.Count; i++)
         {
-            if (WriteForFile(file, force))
+            var file = targets[i];
+            _logger.LogInformation("Processing {Index}/{Total} ({Percent}%): {FilePath}", i + 1, targets.Count, (i + 1) * 100 / targets.Count, file.Path);
+            var folder = Path.GetDirectoryName(file.Path);
+            if (folder is null)
+                continue;
+            if (!sharedFolders.Contains(folder) && IsFolderShared(folder))
+                sharedFolders.Add(folder);
+            if (WriteForFile(file, force, allowFolderArt: !sharedFolders.Contains(folder)))
                 written++;
         }
+        _logger.LogInformation("Generation finished: {Written}/{Total} NFO file(s) written", written, targets.Count);
         return written;
     }
 
-    private bool WriteForFile(IVideoFile file, bool force)
+    private bool WriteForFile(IVideoFile file, bool force, bool allowFolderArt)
     {
         var video = file.Video!;
         var episode = video.Episodes.FirstOrDefault();
@@ -163,7 +206,11 @@ public sealed class NfoGeneratorService : IHostedService
         var cfg = _settings.Load();
 
         if (IsMovie(series, episode))
+        {
+            if (!allowFolderArt)
+                return false;
             return NfoWriter.WriteMovie(Path.Combine(folder, "movie.nfo"), BuildShowNfo(series, series.Episodes.FirstOrDefault(), SidecarWriter.WriteFolderArt(folder, series), cfg), force);
+        }
 
         if (episode is null)
             return false;
@@ -171,7 +218,8 @@ public sealed class NfoGeneratorService : IHostedService
         var thumb = SidecarWriter.WriteThumb(folder, episode);
         bool episodeWritten = NfoWriter.WriteEpisode(Path.ChangeExtension(file.Path, ".nfo"), BuildEpisodeNfo(episode, series, thumb, cfg), force);
 
-        // The folder holding the episodes is treated as the show folder.
+        if (!allowFolderArt)
+            return episodeWritten;
         bool showWritten = NfoWriter.WriteTvShow(Path.Combine(folder, "tvshow.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(folder, series), cfg), force);
         return episodeWritten || showWritten;
     }
@@ -234,15 +282,61 @@ public sealed class NfoGeneratorService : IHostedService
     // video; on delete we only remove the per-file episode NFO. Stale tvshow.nfo
     // / movie.nfo / thumb.jpg may remain when the last file of a folder is
     // removed. Revisit if folder-level cleanup is wanted.
-    private static void DeleteNfosForRelease(IVideo video)
+    // ponytail: no scheduled sweep; folder-level artifacts are only cleaned
+    // when a delete or relocation leaves the folder with no live video files.
+    private void DeleteNfosForRelease(IVideo video)
     {
         foreach (var file in video.Files.Where(f => f.IsAvailable))
         {
-            var nfoPath = Path.ChangeExtension(file.Path, ".nfo");
+            DeleteNfo(file.Path);
+            SweepFolder(Path.GetDirectoryName(file.Path));
+        }
+    }
+
+    private static void DeleteNfo(string videoPath)
+        => TryDelete(Path.ChangeExtension(videoPath, ".nfo"));
+
+    // Art sidecars carry the source extension, so sweep by wildcard.
+    private static readonly string[] FolderArtifacts = ["tvshow.nfo", "movie.nfo", "poster.*", "fanart.*", "banner.*", "logo.*", "disc.*", "thumb.*"];
+
+    /// <summary>Removes folder-level NFOs and art once no live video file remains directly in the folder.</summary>
+    private void SweepFolder(string? folder)
+    {
+        if (folder is null || FolderHasVideoFiles(folder))
+            return;
+        try
+        {
+            DeleteFolderArtifacts(folder);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Full-library orphan sweep: walks every managed folder, removes per-file
+    /// episode NFOs whose video file is gone and folder-level artifacts in
+    /// folders with no live video files left.
+    /// </summary>
+    private int SweepLibrary()
+    {
+        int removed = 0;
+        var filesByDir = _videoService.GetAllVideoFiles()
+            .Where(f => f.IsAvailable)
+            .GroupBy(f => Path.GetDirectoryName(f.Path) ?? "", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(f => f.Path).ToList(), StringComparer.OrdinalIgnoreCase);
+        foreach (var managedFolder in _videoService.GetAllManagedFolders())
+        {
             try
             {
-                if (File.Exists(nfoPath))
-                    File.Delete(nfoPath);
+                foreach (var dir in EnumerateFolders(managedFolder.Path))
+                {
+                    filesByDir.TryGetValue(dir, out var live);
+                    removed += SweepDirectory(dir, live);
+                }
             }
             catch (IOException)
             {
@@ -250,6 +344,95 @@ public sealed class NfoGeneratorService : IHostedService
             catch (UnauthorizedAccessException)
             {
             }
+        }
+        _logger.LogInformation("Library sweep finished: {Removed} orphan NFO/art file(s) removed", removed);
+        return removed;
+    }
+
+    private static IEnumerable<string> EnumerateFolders(string root)
+    {
+        yield return root;
+        foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+            yield return dir;
+    }
+
+    private int SweepDirectory(string dir, IReadOnlyList<string>? liveVideoPaths)
+    {
+        int removed = 0;
+        var live = liveVideoPaths ?? [];
+        var liveNfoPaths = live.Select(p => Path.ChangeExtension(p, ".nfo")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var nfoPath in Directory.GetFiles(dir, "*.nfo"))
+        {
+            if (Path.GetFileName(nfoPath) is "tvshow.nfo" or "movie.nfo")
+                continue;
+            if (!liveNfoPaths.Contains(nfoPath) && IsPluginNfo(nfoPath))
+            {
+                TryDelete(nfoPath);
+                removed++;
+            }
+        }
+        if (live.Count == 0)
+            removed += DeleteFolderArtifacts(dir);
+        return removed;
+    }
+
+    /// <summary>Only plugin-written NFOs embed a Shoko uniqueid; leave user-authored NFOs alone.</summary>
+    private static bool IsPluginNfo(string nfoPath)
+    {
+        try
+        {
+            return File.ReadAllText(nfoPath).Contains("<uniqueid type=\"shoko\"", StringComparison.Ordinal);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static int DeleteFolderArtifacts(string dir)
+    {
+        int removed = 0;
+        foreach (var pattern in FolderArtifacts)
+            foreach (var path in Directory.GetFiles(dir, pattern))
+            {
+                TryDelete(path);
+                removed++;
+            }
+        return removed;
+    }
+
+    private bool FolderHasVideoFiles(string folder)
+        => _videoService.GetVideoFilesByAbsolutePath(folder)
+            .Any(f => string.Equals(Path.GetDirectoryName(f.Path), folder, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True when the folder holds live files of more than one series; folder-level NFOs/art must not be written there.</summary>
+    private bool IsFolderShared(string folder)
+    {
+        var seriesIds = _videoService.GetVideoFilesByAbsolutePath(folder)
+            .Where(f => string.Equals(Path.GetDirectoryName(f.Path), folder, StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.Video?.Episodes.FirstOrDefault()?.Series?.ID)
+            .Where(id => id is not null)
+            .Distinct()
+            .ToList();
+        return seriesIds.Count > 1;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 
