@@ -67,6 +67,8 @@ dotnet build Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Relea
 dotnet run --project tools/NfoGenerator.SelfCheck/NfoGenerator.SelfCheck.csproj -c Release
 ```
 
+Maintainers and coding agents should also use the compact [maintainer wiki](docs/wiki/INDEX.md) for architecture and operational context.
+
 ### Releasing
 
 The `.github/workflows/build-release.yml` workflow handles release builds and manifest maintenance:
