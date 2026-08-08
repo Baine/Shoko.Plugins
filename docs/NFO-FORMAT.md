@@ -14,6 +14,15 @@ Files are only rewritten when the generated content actually differs from what i
 
 Art sidecars are copied only when Shoko has the artwork locally; otherwise the corresponding `<art>` entries are omitted.
 
+## Movie vs. TV show
+
+TMDB data is the deciding factor. An entry is written as a movie (`movie.nfo`) when:
+
+1. the video's episode is linked to a TMDB movie (e.g. specials to shows that TMDB treats as movies), or
+2. the series is linked to a TMDB movie (e.g. OVAs that TMDB treats as movies).
+
+If a series is linked to a TMDB show instead, it is written as a TV show regardless of AniDB's type. Only when TMDB has no links at all does the plugin fall back to AniDB's `Movie` type.
+
 ## Episode NFO
 
 ```xml

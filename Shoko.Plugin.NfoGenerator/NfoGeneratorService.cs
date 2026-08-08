@@ -162,7 +162,7 @@ public sealed class NfoGeneratorService : IHostedService
 
         var cfg = _settings.Load();
 
-        if (series.Type == AnimeType.Movie)
+        if (IsMovie(series, episode))
             return NfoWriter.WriteMovie(Path.Combine(folder, "movie.nfo"), BuildShowNfo(series, series.Episodes.FirstOrDefault(), SidecarWriter.WriteFolderArt(folder, series), cfg), force);
 
         if (episode is null)
@@ -174,6 +174,23 @@ public sealed class NfoGeneratorService : IHostedService
         // The folder holding the episodes is treated as the show folder.
         bool showWritten = NfoWriter.WriteTvShow(Path.Combine(folder, "tvshow.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(folder, series), cfg), force);
         return episodeWritten || showWritten;
+    }
+
+    /// <summary>
+    /// TMDB data decides whether an entry is a movie. OVAs and specials that
+    /// AniDB types as TV shows or specials are treated as movies when linked to
+    /// a TMDB movie. Falls back to the AniDB "Movie" type when TMDB has no
+    /// links for the entry.
+    /// </summary>
+    private static bool IsMovie(IShokoSeries series, IShokoEpisode? episode)
+    {
+        if (episode?.TmdbMovieCrossReferences.Count > 0)
+            return true;
+        if (series.TmdbMovieCrossReferences.Count > 0)
+            return true;
+        if (series.TmdbShowCrossReferences.Count > 0)
+            return false;
+        return series.Type == AnimeType.Movie;
     }
 
     private static EpisodeNfo BuildEpisodeNfo(IShokoEpisode episode, IShokoSeries series, string? thumb, NfoGeneratorSettings cfg)
