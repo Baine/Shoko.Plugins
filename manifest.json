@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.3",
+      "tag": "v0.1.3",
+      "source_revision": "ff9a68c43b223dc21c3abf0cbe63f676b02af932",
+      "released_at": "2026-08-08T10:43:55Z",
+      "channel": "Stable",
+      "release_notes": "## What's Changed\n\n- **Progress logging**: NFO generation now logs per-file/per-series progress (`Processing 1/50 (2%): path`) plus start/finish summaries. These go to Shoko's log file, console, and the WebUI Logs page.\n- **Relocation handling**: when Shoko moves or renames a file, the stale `episode.nfo` at the old path is removed, the old folder is swept, and NFOs are regenerated at the new path (gated by *Generate On Import*).\n- **Full library check**: the *library* trigger now regenerates content-stale NFOs **and** sweeps orphans — per-file `episode.nfo` files whose video file is gone (verified by the embedded Shoko uniqueid, so user-authored NFOs are left alone), plus folder-level artifacts (`tvshow.nfo`, `movie.nfo`, `poster.*`, `fanart.*`, etc.) in folders with no live video files left. The WebUI button now reports both written and removed counts.\n- **Shared-folder guard**: folder-level NFOs and art are only written when every file in the folder belongs to the same series, so one series' metadata can no longer clobber another series' `tvshow.nfo`/`movie.nfo`/posters.\n- **Staleness definition** documented in `AGENTS.md`.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.3/NfoGenerator-v0.1.3_linux-arm64.zip",
+          "checksum": "f04f7cf62a9bfcdb1da47a440d67c67a4bc02eeddb6c6978a46343afdfe6e07f"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.3/NfoGenerator-v0.1.3_linux-x64.zip",
+          "checksum": "8208da15de7129bef2858e30ccb5d30228fb7281c2c8057b1a53dc6cb8a12f7e"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.3/NfoGenerator-v0.1.3_win-x64.zip",
+          "checksum": "abfe6fc311390bd2c9630b9911bca2d5d42d55ea5710bfa4b0b6ad78917de2a7"
+        }
+      ]
+    },
+    {
       "version": "0.1.2",
       "tag": "v0.1.2",
       "source_revision": "4aaa14cb4420c707a249afbef08d3bfe9c8adbc7",
