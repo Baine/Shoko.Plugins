@@ -30,6 +30,12 @@ serialization/compare logic.
   (auto-surfaced in the WebUI). Read via `ConfigurationProvider<NfoGeneratorSettings>`
   in `NfoGeneratorServiceRegistration.cs`.
 - **Triggers**: `Controllers/NfoGeneratorController.cs` — `POST /api/plugin/NfoGenerator/{series|episode|folder|library}`, `[Authorize(Policy = "admin")]`.
+- **WebUI page**: `NfoGeneratorPlugin.GetPages()` exposes a "Settings" page at
+  `GET /api/plugin/NfoGenerator/settings` (anonymous, scaffolding only). The WebUI
+  embeds it as an iframe under Settings → Plugins. Its JS reads the user's apikey
+  from the WebUI's `sessionStorage['state']` / `localStorage['apiSession']` and
+  calls Shoko's admin-protected v3 `Configuration/{id}` GET/PUT plus the library
+  trigger. Do not put secrets in the page; it is served unauthenticated.
 - **Events**: `NfoGeneratorService` subscribes `ReleaseSaved` (gated by
   `GenerateOnImport`), `SeriesUpdated` (gated by `GenerateOnMetadataUpdate`,
   runs with `force: true`), `ReleaseDeleted` (deletes per-file episode NFO).
