@@ -12,5 +12,34 @@
     "sidecar"
   ],
   "image_url": null,
-  "releases": []
+  "releases": [
+    {
+      "version": "0.1.0",
+      "tag": "v0.1.0",
+      "source_revision": "96f2ffce23a850fb5e67bc576353bff344443fc6",
+      "released_at": "2026-08-08T08:36:51Z",
+      "channel": "Stable",
+      "release_notes": "Initial release of the NFO Generator Shoko plugin.\n\n**Features:**\n- Generates Kodi-style \\movie.nfo\\ / \\\tvshow.nfo\\ / \\^[pisode.nfo\\ files next to your video files\n- Writes artwork sidecars (\\\thumb.jpg\\, \\poster.jpg\\, \\\fanart.jpg\\) from Shoko's image cache\n- Automatic generation on import and on series metadata updates (configurable)\n- TMDB data decides movie vs. TV show output (OVAs and specials treated as movies on TMDB are written as movies)\n- Language fallback chain for titles and descriptions (BCP-47 codes, \\shoko\\, \\original\\)\n- Content-aware writes - unchanged files are not rewritten\n- On-demand regeneration via API: \\POST /api/plugin/NfoGenerator/{series|episode|folder|library}\\\n\nInstall from the plugin manifest or extract the ZIP matching your Shoko server runtime into the \\plugins\\ directory.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.0/NfoGenerator-v0.1.0_linux-arm64.zip",
+          "checksum": "51089ac02ec7b4bb9025cc40bda58bd20dea119aa6d41edb8c9ad70a75cd81eb"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.0/NfoGenerator-v0.1.0_linux-x64.zip",
+          "checksum": "3899603d8fd597fdc36074742ff72eb44bb53665741a6451b258d92331d2f407"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.0/NfoGenerator-v0.1.0_win-x64.zip",
+          "checksum": "9d7479da167407c30c2e1bf4baf464f77ba3a80c6e12d34c1bb127303c46208e"
+        }
+      ]
+    }
+  ]
 }
