@@ -52,6 +52,7 @@
       <ReleaseDate>$([System.String]::Copy('$(_GitAuthorDateRaw)').Trim())</ReleaseDate>
       <SourceRevision>$([System.String]::Copy('$(_GitCommitRaw)').Trim())</SourceRevision>
       <ReleaseTag>$([System.String]::Copy('$(_GitTagRaw)').Trim())</ReleaseTag>
+      <Version Condition="'$(_GitTagRaw)' != ''">$([System.String]::Copy('$(_GitTagRaw)').Trim().TrimStart('v'))</Version>
     </PropertyGroup>
     <ItemGroup>
       <AssemblyMetadata Include="ReleaseDate" Value="$(ReleaseDate)" Condition="'$(ReleaseDate)' != ''" />
