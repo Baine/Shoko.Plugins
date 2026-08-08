@@ -105,8 +105,8 @@ public sealed class NfoGeneratorService : IHostedService
     public int GenerateForSeries(IShokoSeries series, bool force = false)
         => RunExclusive(() => GenerateForSeriesCore(series, force));
 
-    private int GenerateForSeriesCore(IShokoSeries series, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
-        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force, showFolders, sharedShowFolders, sweep);
+    private int GenerateForSeriesCore(IShokoSeries series, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true, LibraryIndex? libraryIndex = null)
+        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force, showFolders, sharedShowFolders, sweep, libraryIndex);
 
     /// <summary>Generates NFO files for every available video file of an episode.</summary>
     public int GenerateForEpisode(IShokoEpisode episode, bool force = false)
@@ -123,6 +123,7 @@ public sealed class NfoGeneratorService : IHostedService
     private LibraryCheckResult GenerateForLibraryCore(bool force)
     {
         var seriesList = _metadataService.GetAllShokoSeries().ToList();
+        var libraryIndex = BuildLibraryIndex(seriesList);
         var titleLanguage = _settings.Load().TitleLanguage;
         var showFolders = new Dictionary<int, string>();
         var sharedShowFolders = new Dictionary<int, bool>();
@@ -132,7 +133,7 @@ public sealed class NfoGeneratorService : IHostedService
         {
             var series = seriesList[i];
             _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", i + 1, seriesList.Count, LanguageResolver.Title(series, titleLanguage), series.ID);
-            count += GenerateForSeriesCore(series, force, showFolders, sharedShowFolders, sweep: false);
+            count += GenerateForSeriesCore(series, force, showFolders, sharedShowFolders, sweep: false, libraryIndex: libraryIndex);
         }
         SweepMisplacedShowNfos(showFolders);
         _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", count);
@@ -177,10 +178,10 @@ public sealed class NfoGeneratorService : IHostedService
         });
     }
 
-    private int GenerateForVideos(IEnumerable<IVideo> videos, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
-        => GenerateForFiles(videos.SelectMany(v => v.Files), force, showFolders, sharedShowFolders, sweep);
+    private int GenerateForVideos(IEnumerable<IVideo> videos, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true, LibraryIndex? libraryIndex = null)
+        => GenerateForFiles(videos.SelectMany(v => v.Files), force, showFolders, sharedShowFolders, sweep, libraryIndex);
 
-    private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
+    private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true, LibraryIndex? libraryIndex = null)
     {
         var targets = files.Where(f => f.IsAvailable && f.Video is not null).DistinctBy(f => f.ID).ToList();
         _logger.LogInformation("Generating NFO files for {Count} file(s)", targets.Count);
@@ -197,7 +198,7 @@ public sealed class NfoGeneratorService : IHostedService
                 continue;
             if (!sharedFolders.Contains(folder) && IsFolderShared(folder))
                 sharedFolders.Add(folder);
-            if (WriteForFile(file, force, allowFolderArt: !sharedFolders.Contains(folder), showFolders, sharedShowFolders))
+            if (WriteForFile(file, force, allowFolderArt: !sharedFolders.Contains(folder), showFolders, sharedShowFolders, libraryIndex))
                 written++;
         }
         if (sweep)
@@ -206,7 +207,7 @@ public sealed class NfoGeneratorService : IHostedService
         return written;
     }
 
-    private bool WriteForFile(IVideoFile file, bool force, bool allowFolderArt, Dictionary<int, string> showFolders, Dictionary<int, bool> sharedShowFolders)
+    private bool WriteForFile(IVideoFile file, bool force, bool allowFolderArt, Dictionary<int, string> showFolders, Dictionary<int, bool> sharedShowFolders, LibraryIndex? libraryIndex)
     {
         var video = file.Video!;
         var episode = video.Episodes.FirstOrDefault();
@@ -233,14 +234,14 @@ public sealed class NfoGeneratorService : IHostedService
         var showId = ResolveTmdbShowId(series, episode);
         var showFolder = showId is null
             ? folder
-            : showFolders.GetValueOrDefault(showId.Value) ?? (showFolders[showId.Value] = ResolveShowFolder(folder, showId.Value));
+            : showFolders.GetValueOrDefault(showId.Value) ?? (showFolders[showId.Value] = ResolveShowFolder(folder, showId.Value, libraryIndex));
         var thumb = SidecarWriter.WriteThumb(folder, episode);
         bool episodeWritten = NfoWriter.WriteEpisode(Path.ChangeExtension(file.Path, ".nfo"), BuildEpisodeNfo(episode, series, thumb, cfg), force);
 
         bool showFolderShared = false;
         if (showId is not null && !sharedShowFolders.TryGetValue(showId.Value, out showFolderShared))
         {
-            showFolderShared = IsShowFolderShared(showFolder, showId.Value);
+            showFolderShared = IsShowFolderShared(showFolder, showId.Value, libraryIndex);
             sharedShowFolders[showId.Value] = showFolderShared;
         }
         if (!allowFolderArt || showFolderShared)
@@ -297,22 +298,22 @@ public sealed class NfoGeneratorService : IHostedService
     /// directories are considered together, but only inside the same managed
     /// folder as the current file.
     /// </summary>
-    private string ResolveShowFolder(string fileFolder, int tmdbShowId)
+    private string ResolveShowFolder(string fileFolder, int tmdbShowId, LibraryIndex? libraryIndex = null)
     {
-        var managedFolder = _videoService.GetAllManagedFolders()
+        var managedFolder = (libraryIndex?.ManagedFolders ?? _videoService.GetAllManagedFolders())
             .Where(f => IsPathWithin(fileFolder, f.Path))
             .OrderByDescending(f => f.Path.Length)
             .FirstOrDefault();
         if (managedFolder is null)
             return fileFolder;
 
-        var folders = _metadataService.GetAllShokoSeries()
+        var folders = (libraryIndex?.ShowFolders.GetValueOrDefault(tmdbShowId) ?? _metadataService.GetAllShokoSeries()
             .Where(s => s.TmdbShowCrossReferences.Any(x => x.TmdbShowID == tmdbShowId))
             .SelectMany(s => s.Episodes.OfType<IShokoEpisode>())
             .SelectMany(e => e.VideoList)
             .SelectMany(v => v.Files)
             .Where(f => f.IsAvailable && Path.GetDirectoryName(f.Path) is not null)
-            .Select(f => Path.GetDirectoryName(f.Path)!)
+            .Select(f => Path.GetDirectoryName(f.Path)!))
             .Where(path => IsPathWithin(path, managedFolder.Path))
             .Append(fileFolder)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -549,11 +550,73 @@ public sealed class NfoGeneratorService : IHostedService
     /// guard is insufficient there. Do not write root-level metadata when any
     /// live file below it belongs to another (or unmapped) TMDB show.
     /// </summary>
-    private bool IsShowFolderShared(string folder, int tmdbShowId)
-        => _videoService.GetAllVideoFiles()
+    private bool IsShowFolderShared(string folder, int tmdbShowId, LibraryIndex? libraryIndex = null)
+    {
+        if (libraryIndex?.FolderContents.TryGetValue(DirectoryKey(folder), out var contents) == true)
+            return contents.FileCount != contents.ShowFileCounts.GetValueOrDefault(tmdbShowId);
+        return _videoService.GetAllVideoFiles()
             .Where(f => f.IsAvailable && IsPathWithin(f.Path, folder))
             .Any(f => f.Video?.Episodes.FirstOrDefault()?.Series is not { } series
                 || !series.TmdbShowCrossReferences.Any(x => x.TmdbShowID == tmdbShowId));
+    }
+
+    private LibraryIndex BuildLibraryIndex(IReadOnlyList<IShokoSeries> seriesList)
+    {
+        var managedFolders = _videoService.GetAllManagedFolders().ToList();
+        var showFolders = new Dictionary<int, List<string>>();
+        foreach (var series in seriesList)
+        {
+            var folders = series.Episodes.OfType<IShokoEpisode>()
+                .SelectMany(e => e.VideoList)
+                .SelectMany(v => v.Files)
+                .Where(f => f.IsAvailable && Path.GetDirectoryName(f.Path) is not null)
+                .Select(f => Path.GetDirectoryName(f.Path)!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var showId in series.TmdbShowCrossReferences.Select(x => x.TmdbShowID).Distinct())
+            {
+                if (!showFolders.TryGetValue(showId, out var destinations))
+                    showFolders[showId] = destinations = [];
+                destinations.AddRange(folders);
+            }
+        }
+
+        var folderContents = new Dictionary<string, FolderContents>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in _videoService.GetAllVideoFiles().Where(f => f.IsAvailable))
+        {
+            var directory = Path.GetDirectoryName(file.Path);
+            if (directory is null)
+                continue;
+            var managedFolder = managedFolders.Where(f => IsPathWithin(directory, f.Path)).OrderByDescending(f => f.Path.Length).FirstOrDefault();
+            if (managedFolder is null)
+                continue;
+            var showIds = file.Video?.Episodes.FirstOrDefault()?.Series?.TmdbShowCrossReferences.Select(x => x.TmdbShowID).Distinct() ?? [];
+            for (var current = directory; current is not null; current = Path.GetDirectoryName(current))
+            {
+                var key = DirectoryKey(current);
+                if (!folderContents.TryGetValue(key, out var contents))
+                    folderContents[key] = contents = new FolderContents();
+                contents.FileCount++;
+                foreach (var showId in showIds)
+                    contents.ShowFileCounts[showId] = contents.ShowFileCounts.GetValueOrDefault(showId) + 1;
+                if (PathsEqual(current, managedFolder.Path))
+                    break;
+            }
+        }
+        _logger.LogInformation("Indexed {ShowCount} TMDB show(s) and {FolderCount} media folder(s) for library generation", showFolders.Count, folderContents.Count);
+        return new LibraryIndex(managedFolders, showFolders, folderContents);
+    }
+
+    private static string DirectoryKey(string path)
+        => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    private sealed record LibraryIndex(IReadOnlyList<IManagedFolder> ManagedFolders, Dictionary<int, List<string>> ShowFolders, Dictionary<string, FolderContents> FolderContents);
+
+    private sealed class FolderContents
+    {
+        public int FileCount { get; set; }
+        public Dictionary<int, int> ShowFileCounts { get; } = [];
+    }
 
     /// <summary>
     /// Removes legacy plugin-generated tvshow.nfo files below a resolved show
