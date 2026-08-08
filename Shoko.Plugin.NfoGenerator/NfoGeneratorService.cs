@@ -28,6 +28,9 @@ public sealed class NfoGeneratorService : IHostedService
     private readonly IMetadataService _metadataService;
     private readonly IVideoService _videoService;
     private readonly ILogger<NfoGeneratorService> _logger;
+    // ponytail: one global gate; use keyed queues only if serialized generation
+    // becomes a measurable throughput problem after imports have settled.
+    private readonly SemaphoreSlim _generationGate = new(1, 1);
 
     public NfoGeneratorService(
         IVideoReleaseService releaseService,
@@ -65,18 +68,7 @@ public sealed class NfoGeneratorService : IHostedService
     {
         if (!_settings.Load().GenerateOnImport)
             return;
-        // Fire-and-forget: file I/O must not block the event dispatcher.
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                GenerateForVideos([e.Video], force: false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate NFO files for video {VideoID}", e.Video.ID);
-            }
-        });
+        RunFromEvent(() => GenerateForVideos([e.Video], force: false), "generate NFO files for video {VideoID}", e.Video.ID);
     }
 
     private void OnSeriesUpdated(object? sender, SeriesInfoUpdatedEventArgs e)
@@ -85,96 +77,116 @@ public sealed class NfoGeneratorService : IHostedService
             return;
         if (e.SeriesInfo is not IShokoSeries series)
             return;
-        // Fire-and-forget: file I/O must not block the event dispatcher.
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                // ponytail: metadata updates rewrite even unchanged files so the
-                // media library sees a fresh mtime after a metadata change.
-                GenerateForSeries(series, force: true);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate NFO files for series {SeriesID}", series.ID);
-            }
-        });
+        // Metadata updates rewrite even unchanged files so the media library
+        // sees a fresh mtime after a metadata change.
+        RunFromEvent(() => GenerateForSeriesCore(series, force: true), "generate NFO files for series {SeriesID}", series.ID);
     }
 
     private void OnReleaseDeleted(object? sender, VideoReleaseDeletedEventArgs e)
     {
         if (e.Video is not { } video)
             return;
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                DeleteNfosForRelease(video);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to remove NFO files for video {VideoID}", video.ID);
-            }
-        });
+        RunFromEvent(() => DeleteNfosForRelease(video), "remove NFO files for video {VideoID}", video.ID);
     }
 
     private void OnVideoFileRelocated(object? sender, VideoFileRelocatedEventArgs e)
     {
         if (!_settings.Load().GenerateOnImport)
             return;
-        _ = Task.Run(() =>
+        RunFromEvent(() =>
         {
-            try
-            {
-                DeleteNfo(e.PreviousPath);
-                SweepFolder(Path.GetDirectoryName(e.PreviousPath));
-                GenerateForFiles([e.File], force: false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate NFO files for relocated file {FilePath}", e.File.Path);
-            }
-        });
+            DeleteNfo(e.PreviousPath);
+            SweepFolder(Path.GetDirectoryName(e.PreviousPath));
+            GenerateForFiles([e.File], force: false);
+        }, "generate NFO files for relocated file {FilePath}", e.File.Path);
     }
 
     /// <summary>Generates NFO files for every available video file of a series.</summary>
     public int GenerateForSeries(IShokoSeries series, bool force = false)
-        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force);
+        => RunExclusive(() => GenerateForSeriesCore(series, force));
+
+    private int GenerateForSeriesCore(IShokoSeries series, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
+        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force, showFolders, sharedShowFolders, sweep);
 
     /// <summary>Generates NFO files for every available video file of an episode.</summary>
     public int GenerateForEpisode(IShokoEpisode episode, bool force = false)
-        => GenerateForVideos(episode.VideoList, force);
+        => RunExclusive(() => GenerateForVideos(episode.VideoList, force));
 
     /// <summary>Generates NFO files for every available video file inside an import folder.</summary>
     public int GenerateForFolder(IManagedFolder folder, bool force = false)
-        => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force);
+        => RunExclusive(() => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force));
 
     /// <summary>Generates NFO files for the entire library, then sweeps orphan NFO/art files.</summary>
     public LibraryCheckResult GenerateForLibrary(bool force = false)
+        => RunExclusive(() => GenerateForLibraryCore(force));
+
+    private LibraryCheckResult GenerateForLibraryCore(bool force)
     {
         var seriesList = _metadataService.GetAllShokoSeries().ToList();
         var titleLanguage = _settings.Load().TitleLanguage;
+        var showFolders = new Dictionary<int, string>();
+        var sharedShowFolders = new Dictionary<int, bool>();
         _logger.LogInformation("Generating NFO files for the entire library: {Count} series", seriesList.Count);
         int count = 0;
         for (int i = 0; i < seriesList.Count; i++)
         {
             var series = seriesList[i];
             _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", i + 1, seriesList.Count, LanguageResolver.Title(series, titleLanguage), series.ID);
-            count += GenerateForSeries(series, force);
+            count += GenerateForSeriesCore(series, force, showFolders, sharedShowFolders, sweep: false);
         }
+        SweepMisplacedShowNfos(showFolders);
         _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", count);
         int removed = SweepLibrary();
         return new LibraryCheckResult(count, removed);
     }
 
-    private int GenerateForVideos(IEnumerable<IVideo> videos, bool force)
-        => GenerateForFiles(videos.SelectMany(v => v.Files), force);
+    private T RunExclusive<T>(Func<T> action)
+    {
+        _generationGate.Wait();
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            _generationGate.Release();
+        }
+    }
 
-    private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force)
+    private void RunFromEvent(Action action, string failureMessage, params object[] args)
+    {
+        _ = Task.Run(() =>
+        {
+            if (!_generationGate.Wait(0))
+            {
+                _logger.LogDebug("Skipping NFO event because a generation is already in progress");
+                return;
+            }
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, failureMessage, args);
+            }
+            finally
+            {
+                _generationGate.Release();
+            }
+        });
+    }
+
+    private int GenerateForVideos(IEnumerable<IVideo> videos, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
+        => GenerateForFiles(videos.SelectMany(v => v.Files), force, showFolders, sharedShowFolders, sweep);
+
+    private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force, Dictionary<int, string>? showFolders = null, Dictionary<int, bool>? sharedShowFolders = null, bool sweep = true)
     {
         var targets = files.Where(f => f.IsAvailable && f.Video is not null).DistinctBy(f => f.ID).ToList();
         _logger.LogInformation("Generating NFO files for {Count} file(s)", targets.Count);
         var sharedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        showFolders ??= [];
+        sharedShowFolders ??= [];
         int written = 0;
         for (int i = 0; i < targets.Count; i++)
         {
@@ -185,14 +197,16 @@ public sealed class NfoGeneratorService : IHostedService
                 continue;
             if (!sharedFolders.Contains(folder) && IsFolderShared(folder))
                 sharedFolders.Add(folder);
-            if (WriteForFile(file, force, allowFolderArt: !sharedFolders.Contains(folder)))
+            if (WriteForFile(file, force, allowFolderArt: !sharedFolders.Contains(folder), showFolders, sharedShowFolders))
                 written++;
         }
+        if (sweep)
+            SweepMisplacedShowNfos(showFolders);
         _logger.LogInformation("Generation finished: {Written}/{Total} NFO file(s) written", written, targets.Count);
         return written;
     }
 
-    private bool WriteForFile(IVideoFile file, bool force, bool allowFolderArt)
+    private bool WriteForFile(IVideoFile file, bool force, bool allowFolderArt, Dictionary<int, string> showFolders, Dictionary<int, bool> sharedShowFolders)
     {
         var video = file.Video!;
         var episode = video.Episodes.FirstOrDefault();
@@ -217,15 +231,21 @@ public sealed class NfoGeneratorService : IHostedService
             return false;
 
         var showId = ResolveTmdbShowId(series, episode);
-        var showFolder = ResolveShowFolder(folder, series, showId);
+        var showFolder = showId is null
+            ? folder
+            : showFolders.GetValueOrDefault(showId.Value) ?? (showFolders[showId.Value] = ResolveShowFolder(folder, showId.Value));
         var thumb = SidecarWriter.WriteThumb(folder, episode);
         bool episodeWritten = NfoWriter.WriteEpisode(Path.ChangeExtension(file.Path, ".nfo"), BuildEpisodeNfo(episode, series, thumb, cfg), force);
 
-        if (!allowFolderArt || (showId is not null && IsShowFolderShared(showFolder, showId.Value)))
+        bool showFolderShared = false;
+        if (showId is not null && !sharedShowFolders.TryGetValue(showId.Value, out showFolderShared))
+        {
+            showFolderShared = IsShowFolderShared(showFolder, showId.Value);
+            sharedShowFolders[showId.Value] = showFolderShared;
+        }
+        if (!allowFolderArt || showFolderShared)
             return episodeWritten;
         bool showWritten = NfoWriter.WriteTvShow(Path.Combine(showFolder, "tvshow.nfo"), BuildShowNfo(series, episode, SidecarWriter.WriteFolderArt(showFolder, series), cfg, showId), force);
-        if (showId is not null)
-            SweepMisplacedShowNfos(showFolder, showId.Value);
         return episodeWritten || showWritten;
     }
 
@@ -277,11 +297,8 @@ public sealed class NfoGeneratorService : IHostedService
     /// directories are considered together, but only inside the same managed
     /// folder as the current file.
     /// </summary>
-    private string ResolveShowFolder(string fileFolder, IShokoSeries series, int? tmdbShowId)
+    private string ResolveShowFolder(string fileFolder, int tmdbShowId)
     {
-        if (tmdbShowId is null)
-            return fileFolder;
-
         var managedFolder = _videoService.GetAllManagedFolders()
             .Where(f => IsPathWithin(fileFolder, f.Path))
             .OrderByDescending(f => f.Path.Length)
@@ -544,6 +561,12 @@ public sealed class NfoGeneratorService : IHostedService
     /// all map to this TMDB show; user-authored and unrelated NFOs are left
     /// intact.
     /// </summary>
+    private void SweepMisplacedShowNfos(IReadOnlyDictionary<int, string> showFolders)
+    {
+        foreach (var (showId, showFolder) in showFolders)
+            SweepMisplacedShowNfos(showFolder, showId);
+    }
+
     private void SweepMisplacedShowNfos(string showFolder, int tmdbShowId)
     {
         try
