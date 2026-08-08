@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.5",
+      "tag": "v0.1.5",
+      "source_revision": "c2b5d7711e4687af40a055966ee120d29677ade9",
+      "released_at": "2026-08-08T12:01:40Z",
+      "channel": "Stable",
+      "release_notes": "## What's Changed\n\n- **TMDB-aware NFOs**: episode, TV show, and movie NFOs now include Shoko's TMDB provider IDs. TMDB is the default identifier when available, while AniDB and Shoko IDs remain embedded for compatibility.\n- **TMDB episode ordering**: mapped episodes now emit TMDB season and episode numbers, so metadata follows TMDB's structure rather than AniDB's numbering where the two differ.\n- **TV show root placement**: `tvshow.nfo` and show-level artwork now resolve to the shared TMDB show folder instead of being written into individual season directories. Media files are never renamed or moved.\n- **Legacy cleanup**: after writing a root-level show NFO, the plugin removes its old, misplaced `tvshow.nfo` files from matching season folders. It only removes plugin-authored files associated with the same TMDB show; user-authored NFOs are preserved.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.5/NfoGenerator-v0.1.5_linux-arm64.zip",
+          "checksum": "1a81b93a3d6ce6ae64cecdc75e1707ae24801191276d8db59a44a65cb3af804d"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.5/NfoGenerator-v0.1.5_linux-x64.zip",
+          "checksum": "737d4d4441121be69825d793a297f8f4607a75046d604dee6f6ad9f3b0a80725"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.5/NfoGenerator-v0.1.5_win-x64.zip",
+          "checksum": "8a7f577cf20cbcc75ab18646e8e221e9613bfb70b3f422482f8f41aadf0ef088"
+        }
+      ]
+    },
+    {
       "version": "0.1.4",
       "tag": "v0.1.4",
       "source_revision": "35119a4ccf31488bd4d2e0b2c03cb4da23c2ad41",
