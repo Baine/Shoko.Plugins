@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.6",
+      "tag": "v0.1.6",
+      "source_revision": "97a5969bf15d21b393b72c3c8f66766859c8105a",
+      "released_at": "2026-08-08T12:49:30Z",
+      "channel": "Stable",
+      "release_notes": "## What's Changed\n\n- **Faster TMDB show resolution**: show-root lookup and shared-folder checks are now cached per TMDB show for a generation batch, including across a full-library run. This removes the previous full-library scan for every episode.\n- **No overlapping generation**: NFO generation is now globally serialized. While a generation is active, duplicate background import, relocation, metadata-update, and deletion events are skipped; manual API requests wait for the active run.\n- **Reliable legacy cleanup**: plugin-generated `tvshow.nfo` files in old season folders are now swept once per resolved show batch, including when root-level metadata is withheld by the shared-folder guard.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.6/NfoGenerator-v0.1.6_linux-arm64.zip",
+          "checksum": "0c5ff5818ac3df7c4eeda292d4265a55db76c451bb54cdfbf6126bf1b6e75e3c"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.6/NfoGenerator-v0.1.6_linux-x64.zip",
+          "checksum": "0a940b5fae85f068a35523b77c9f2f2cb1e10e6ef16d03fc8fe9ebd7033bdbea"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.6/NfoGenerator-v0.1.6_win-x64.zip",
+          "checksum": "8f4a9869615faf4ee9a46d146765f7ff26963daae801841860be225576068f41"
+        }
+      ]
+    },
+    {
       "version": "0.1.5",
       "tag": "v0.1.5",
       "source_revision": "c2b5d7711e4687af40a055966ee120d29677ade9",
