@@ -2,9 +2,6 @@
 
 A [Shoko](https://shokoanime.com/) server plugin that generates [Kodi-style](https://kodi.wiki/view/NFO_files) NFO files and artwork sidecars next to your video files whenever Shoko matches them to metadata.
 
-> [!NOTE]
-> This repository is currently private. Releases and the plugin manifest are only usable once the repo is made public (the WebUI manifest installer and release downloads require public URLs).
-
 ## Features
 
 - Generates `movie.nfo` / `tvshow.nfo` / `episode.nfo` Kodi NFO files directly inside your import folders, next to the video file.
