@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.7",
+      "tag": "v0.1.7",
+      "source_revision": "3eabe1be4455d02e1ede5313a9adb27a8a0f23d3",
+      "released_at": "2026-08-08T13:21:59Z",
+      "channel": "Stable",
+      "release_notes": "## Performance\n\n- Index TMDB show folders and live-file ownership once per library generation.\n- Avoid repeated full-library metadata and video-file scans while resolving show roots and shared folders.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.7/NfoGenerator-v0.1.7_linux-arm64.zip",
+          "checksum": "cd0131cdbf0a3e3196b551d2494fb854e9701ed0ea7455862f4b18ee9e8362ed"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.7/NfoGenerator-v0.1.7_linux-x64.zip",
+          "checksum": "ca975faadd41567f723b05748890ad007ca13b5180bfec5ce029451bb9379c5d"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.7/NfoGenerator-v0.1.7_win-x64.zip",
+          "checksum": "8a98d5e52881a44ed15800e139cb6ce20a4d5618260d1be386189f307728c1ce"
+        }
+      ]
+    },
+    {
       "version": "0.1.6",
       "tag": "v0.1.6",
       "source_revision": "97a5969bf15d21b393b72c3c8f66766859c8105a",
