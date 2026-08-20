@@ -49,14 +49,34 @@ public sealed class ShowNfo
 
 internal static class NfoWriter
 {
+    internal const string OwnershipMarker = "Shoko.Plugin.NfoGenerator: 5c5482c1-3dd0-49cb-b862-d57e305da353";
+
     /// <summary>Writes an episode NFO, skipping the write if the content is unchanged. Returns true if the file was written.</summary>
-    public static bool WriteEpisode(string path, EpisodeNfo nfo, bool force = false) => Write(path, BuildEpisode(nfo), force);
+    public static bool WriteEpisode(string path, EpisodeNfo nfo, bool force = false) => Complete(path, WriteEpisodeDetailed(path, nfo, force));
 
     /// <summary>Writes a tvshow NFO, skipping the write if the content is unchanged. Returns true if the file was written.</summary>
-    public static bool WriteTvShow(string path, ShowNfo nfo, bool force = false) => Write(path, BuildShow("tvshow", nfo), force);
+    public static bool WriteTvShow(string path, ShowNfo nfo, bool force = false) => Complete(path, WriteTvShowDetailed(path, nfo, force));
 
     /// <summary>Writes a movie NFO, skipping the write if the content is unchanged. Returns true if the file was written.</summary>
-    public static bool WriteMovie(string path, ShowNfo nfo, bool force = false) => Write(path, BuildShow("movie", nfo), force);
+    public static bool WriteMovie(string path, ShowNfo nfo, bool force = false) => Complete(path, WriteMovieDetailed(path, nfo, force));
+
+    internal static NfoWriteResult WriteEpisodeDetailed(string path, EpisodeNfo nfo, bool force = false)
+        => Write(path, BuildEpisode(nfo), force);
+
+    internal static NfoWriteResult WriteTvShowDetailed(string path, ShowNfo nfo, bool force = false)
+        => Write(path, BuildShow("tvshow", nfo), force);
+
+    internal static NfoWriteResult WriteMovieDetailed(string path, ShowNfo nfo, bool force = false)
+        => Write(path, BuildShow("movie", nfo), force);
+
+    private static bool Complete(string path, NfoWriteResult result)
+    {
+        if (result.Status is NfoWriteStatus.OwnershipReadFailed
+            or NfoWriteStatus.ContentReadFailed
+            or NfoWriteStatus.WriteFailed)
+            throw new IOException($"Unable to {result.Status} NFO at '{path}'.", result.Error);
+        return result.Status == NfoWriteStatus.Written;
+    }
 
     private static XDocument BuildEpisode(EpisodeNfo n)
     {
@@ -74,7 +94,7 @@ internal static class NfoWriter
             UniqueId("anidb", n.AnidbId, isDefault: n.TmdbId is null),
             UniqueId("shoko", n.ShokoId),
             El("thumb", n.Thumb));
-        return new XDocument(new XDeclaration("1.0", "utf-8", null), root);
+        return new XDocument(new XDeclaration("1.0", "utf-8", null), new XComment(OwnershipMarker), root);
     }
 
     private static XDocument BuildShow(string rootTag, ShowNfo n)
@@ -94,7 +114,7 @@ internal static class NfoWriter
             UniqueId("anidb", n.AnidbId, isDefault: n.TmdbId is null),
             UniqueId("shoko", n.ShokoId),
             BuildArt(n.Art));
-        return new XDocument(new XDeclaration("1.0", "utf-8", null), root);
+        return new XDocument(new XDeclaration("1.0", "utf-8", null), new XComment(OwnershipMarker), root);
     }
 
     private static XElement? BuildArt(IReadOnlyDictionary<string, string> art)
@@ -131,7 +151,7 @@ internal static class NfoWriter
     // write when the content differs, so unchanged NFOs keep their timestamp
     // (no media-library rescans) and repeated triggers cost one small read.
     // Pass force=true to always rewrite (used for metadata updates).
-    private static bool Write(string path, XDocument doc, bool force)
+    private static NfoWriteResult Write(string path, XDocument doc, bool force)
     {
         // Serialize via a stream, not a StringBuilder: the latter stamps the
         // declaration with encoding="utf-16".
@@ -141,12 +161,97 @@ internal static class NfoWriter
             doc.Save(writer);
         var content = Encoding.UTF8.GetString(ms.ToArray());
 
-        if (!force && File.Exists(path) && File.ReadAllText(path) == content)
-            return false;
+        bool exists = File.Exists(path);
+        if (exists)
+        {
+            var ownership = ReadOwnership(path);
+            if (ownership.Status == NfoOwnershipStatus.Failed)
+                return new(NfoWriteStatus.OwnershipReadFailed, ownership.Error);
+            if (ownership.Status != NfoOwnershipStatus.Owned)
+                return new(NfoWriteStatus.Unowned, null);
+        }
+        if (!force && exists)
+        {
+            try
+            {
+                if (File.ReadAllText(path) == content)
+                    return new(NfoWriteStatus.Unchanged, null);
+            }
+            catch (IOException ex)
+            {
+                return new(NfoWriteStatus.ContentReadFailed, ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return new(NfoWriteStatus.ContentReadFailed, ex);
+            }
+        }
 
-        File.WriteAllText(path, content, new UTF8Encoding(false));
-        return true;
+        try
+        {
+            File.WriteAllText(path, content, new UTF8Encoding(false));
+            return new(NfoWriteStatus.Written, null);
+        }
+        catch (IOException ex)
+        {
+            return new(NfoWriteStatus.WriteFailed, ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new(NfoWriteStatus.WriteFailed, ex);
+        }
     }
+
+    /// <summary>True only for NFOs emitted by this plugin.</summary>
+    internal static bool IsOwned(string path)
+        => ReadOwnership(path).Status == NfoOwnershipStatus.Owned;
+
+    private static NfoOwnershipResult ReadOwnership(string path)
+    {
+        try
+        {
+            return File.ReadAllText(path).Contains(OwnershipMarker, StringComparison.Ordinal)
+                ? new(NfoOwnershipStatus.Owned, null)
+                : new(NfoOwnershipStatus.Unowned, null);
+        }
+        catch (FileNotFoundException)
+        {
+            return new(NfoOwnershipStatus.Unowned, null);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(NfoOwnershipStatus.Unowned, null);
+        }
+        catch (IOException ex)
+        {
+            return new(NfoOwnershipStatus.Failed, ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new(NfoOwnershipStatus.Failed, ex);
+        }
+    }
+
+    internal enum NfoWriteStatus
+    {
+        Written,
+        Unchanged,
+        Unowned,
+        OwnershipReadFailed,
+        ContentReadFailed,
+        WriteFailed,
+    }
+
+    internal readonly record struct NfoWriteResult(NfoWriteStatus Status, Exception? Error);
+
+    private enum NfoOwnershipStatus
+    {
+        Owned,
+        Unowned,
+        Failed,
+    }
+
+    private readonly record struct NfoOwnershipResult(NfoOwnershipStatus Status, Exception? Error);
 
     /// <summary>
     /// Asserts the XML output for each NFO type is well-formed and valid.
@@ -212,6 +317,24 @@ internal static class NfoWriter
             throw new InvalidOperationException($"{episodePath}: changed content was skipped");
         if (File.ReadAllBytes(episodePath).SequenceEqual(unchangedBytes))
             throw new InvalidOperationException($"{episodePath}: changed content was not written");
+
+        var userPath = Path.Combine(outputDir, "user.nfo");
+        const string userContent = "<episodedetails><uniqueid type=\"shoko\">user</uniqueid></episodedetails>";
+        File.WriteAllText(userPath, userContent);
+        if (WriteEpisode(userPath, episode, force: true) || File.ReadAllText(userPath) != userContent)
+            throw new InvalidOperationException($"{userPath}: unowned NFO was overwritten");
+
+        var ownedPath = Path.Combine(outputDir, "owned.nfo");
+        WriteEpisode(ownedPath, episode);
+        episode.Rating = 8.0;
+        if (!WriteEpisode(ownedPath, episode, force: true))
+            throw new InvalidOperationException($"{ownedPath}: owned NFO was not updated");
+
+        var failedPath = Path.Combine(outputDir, "failed.nfo");
+        Directory.CreateDirectory(failedPath);
+        var failed = WriteEpisodeDetailed(failedPath, episode, force: true);
+        if (failed.Status != NfoWriteStatus.WriteFailed || failed.Error is null)
+            throw new InvalidOperationException($"{failedPath}: write failure was not reported");
         Console.WriteLine("OK content-check");
     }
 
@@ -225,6 +348,8 @@ internal static class NfoWriter
             throw new InvalidOperationException($"{path}: title mismatch");
         if (root.Element(dateElement)?.Value != expectedDate)
             throw new InvalidOperationException($"{path}: {dateElement} mismatch");
+        if (!File.ReadAllText(path).Contains(OwnershipMarker, StringComparison.Ordinal))
+            throw new InvalidOperationException($"{path}: ownership marker missing");
         var uniqueId = root.Elements("uniqueid").FirstOrDefault(el => (string?)el.Attribute("type") == "anidb");
         if (uniqueId?.Value != anidbId)
             throw new InvalidOperationException($"{path}: anidb uniqueid mismatch");

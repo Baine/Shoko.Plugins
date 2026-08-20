@@ -86,8 +86,11 @@ public sealed class NfoGenerationJob(NfoGeneratorService service, IMetadataServi
             case NfoGenerationKind.Delete when PreviousPath is not null:
                 service.DeleteForPath(PreviousPath);
                 break;
-            case NfoGenerationKind.Relocated when PreviousPath is not null && videoService.GetVideoFileByID(ID) is { } file:
-                service.GenerateForRelocatedFile(file, PreviousPath);
+            case NfoGenerationKind.Relocated when PreviousPath is not null:
+                if (videoService.GetVideoFileByID(ID) is { } file)
+                    service.GenerateForRelocatedFile(file, PreviousPath);
+                else
+                    service.DeleteForPath(PreviousPath);
                 break;
         }
     }

@@ -35,8 +35,8 @@ public sealed class NfoGeneratorController : ControllerBase
     {
         if (_metadataService.GetShokoSeriesByID(seriesID) is not { } series)
             return NotFound(new { status = "error", message = $"Series {seriesID} not found" });
-        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.ID; });
-        return Ok(new { status = "ok" });
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.ID; }, prioritize: true);
+        return Accepted(new { status = "queued" });
     }
 
     /// <summary>Regenerates all NFO files for an episode.</summary>
@@ -45,8 +45,8 @@ public sealed class NfoGeneratorController : ControllerBase
     {
         if (_metadataService.GetShokoEpisodeByID(episodeID) is not { } episode)
             return NotFound(new { status = "error", message = $"Episode {episodeID} not found" });
-        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Episode; job.ID = episode.ID; });
-        return Ok(new { status = "ok" });
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Episode; job.ID = episode.ID; }, prioritize: true);
+        return Accepted(new { status = "queued" });
     }
 
     /// <summary>Regenerates all NFO files inside an import folder.</summary>
@@ -55,22 +55,16 @@ public sealed class NfoGeneratorController : ControllerBase
     {
         if (_videoService.GetManagedFolderByID(folderID) is not { } folder)
             return NotFound(new { status = "error", message = $"Folder {folderID} not found" });
-        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Folder; job.ID = folder.ID; });
-        return Ok(new { status = "ok" });
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Folder; job.ID = folder.ID; }, prioritize: true);
+        return Accepted(new { status = "queued" });
     }
 
     /// <summary>Regenerates NFO files for the entire library and sweeps orphan NFO/art files.</summary>
     [HttpPost("library")]
     public async Task<IActionResult> GenerateLibrary()
     {
-        var series = _metadataService.GetAllShokoSeries().ToList();
-        await _queueScheduler.EnqueueImmediate<NfoGenerationJob>(job =>
-        {
-            job.Kind = NfoGenerationKind.Library;
-            job.Total = series.Count;
-            job.SeriesTitle = series.FirstOrDefault()?.DefaultTitle.Value;
-        });
-        return Ok(new { status = "ok" });
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => job.Kind = NfoGenerationKind.Library, prioritize: true);
+        return Accepted(new { status = "queued" });
     }
 
     /// <summary>
@@ -141,7 +135,7 @@ public sealed class NfoGeneratorController : ControllerBase
 
           <button type="button" id="regenerate" class="secondary">Check &amp; regenerate library</button>
 
-          <div id="status"></div>
+          <div id="status" role="status" aria-live="polite"></div>
 
           <script>
             const pluginID = '5c5482c1-3dd0-49cb-b862-d57e305da353';
@@ -167,6 +161,11 @@ public sealed class NfoGeneratorController : ControllerBase
               statusEl.className = kind || '';
             }
 
+            function setBusy(busy) {
+              form.querySelectorAll('input, button').forEach(control => control.disabled = busy);
+              document.getElementById('regenerate').disabled = busy;
+            }
+
             let configID = '';
 
             async function loadConfig() {
@@ -190,23 +189,38 @@ public sealed class NfoGeneratorController : ControllerBase
               event.preventDefault();
               if (!configID) return setStatus('Settings not loaded yet.', 'error');
               setStatus('Saving...');
-              const body = {
-                TitleLanguage: form.elements.TitleLanguage.value.trim(),
-                DescriptionLanguage: form.elements.DescriptionLanguage.value.trim(),
-                GenerateOnImport: form.elements.GenerateOnImport.checked,
-                GenerateOnMetadataUpdate: form.elements.GenerateOnMetadataUpdate.checked,
-              };
-              const res = await fetch(`/api/v3/Configuration/${configID}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
-              if (!res.ok) return setStatus(`Save failed (${res.status}).`, 'error');
-              setStatus('Settings saved.', 'ok');
+              setBusy(true);
+              try {
+                const body = {
+                  TitleLanguage: form.elements.TitleLanguage.value.trim(),
+                  DescriptionLanguage: form.elements.DescriptionLanguage.value.trim(),
+                  GenerateOnImport: form.elements.GenerateOnImport.checked,
+                  GenerateOnMetadataUpdate: form.elements.GenerateOnMetadataUpdate.checked,
+                };
+                const res = await fetch(`/api/v3/Configuration/${configID}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
+                if (!res.ok) throw new Error(`Save failed (${res.status}).`);
+                setStatus('Settings saved.', 'ok');
+              } catch (err) {
+                setStatus(err instanceof Error ? err.message : 'Save failed.', 'error');
+              } finally {
+                setBusy(false);
+              }
             });
 
             document.getElementById('regenerate').addEventListener('click', async () => {
-              setStatus('Regenerating library...');
-              const res = await fetch('/api/plugin/NfoGenerator/library', { method: 'POST', headers: headers() });
-              if (!res.ok) return setStatus(`Regenerate failed (${res.status}).`, 'error');
-              const data = await res.json();
-              setStatus('Done.', 'ok');
+              setStatus('Queueing library check...');
+              setBusy(true);
+              try {
+                const res = await fetch('/api/plugin/NfoGenerator/library', { method: 'POST', headers: headers() });
+                if (!res.ok) throw new Error(`Library check could not be queued (${res.status}).`);
+                const data = await res.json();
+                if (data.status !== 'queued') throw new Error('Regenerate failed: unexpected response.');
+                setStatus("Library check queued. Track progress in Shoko's queue.", 'ok');
+              } catch (err) {
+                setStatus(err instanceof Error ? err.message : 'Library check could not be queued.', 'error');
+              } finally {
+                setBusy(false);
+              }
             });
 
             loadConfig().catch(err => setStatus(err.message, 'error'));
