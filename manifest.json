@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.11",
+      "tag": "v0.1.11",
+      "source_revision": "d457adaa2422c40b4036058d970c49f7911c9a4d",
+      "released_at": "2026-08-20T21:18:43Z",
+      "channel": "Stable",
+      "release_notes": "## Improved\n\n- Preserve user-managed NFOs and artwork while generating deterministic, per-video sidecars.\n- Reduce relocation generation work with scoped caches and targeted metadata lookups.\n- Add slow-relocation phase timing to help diagnose remaining storage or metadata delays.\n\n## Fixed\n\n- Make NFO, sidecar, cleanup, and relocation failures observable and retryable.\n- Return queued trigger responses only after queue acceptance, with clearer settings-page status and errors.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.11/NfoGenerator-v0.1.11_linux-arm64.zip",
+          "checksum": "d8647acec3158688498bbe680d3dbaa081b86ac97d79642ba86d46b15ee1e22b"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.11/NfoGenerator-v0.1.11_linux-x64.zip",
+          "checksum": "ee8a7c97c5df06840c69a3a666c0bb2c0624dab78f0cc43825795101f625e58e"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/shoko-nfo-generator/releases/download/v0.1.11/NfoGenerator-v0.1.11_win-x64.zip",
+          "checksum": "d0b537f370e73b080eeb7035954acb08e595eed9af33772ebbdb539c291509c1"
+        }
+      ]
+    },
+    {
       "version": "0.1.10",
       "tag": "v0.1.10",
       "source_revision": "1c1ee65d74dce1d0876c451cc6fcf26a0d0acaf7",
