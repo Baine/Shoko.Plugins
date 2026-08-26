@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Shoko.Plugin.AniDBWatchHistory</AssemblyName>
+    <RootNamespace>Shoko.Plugin.AniDBWatchHistory</RootNamespace>
+    <Version>1.0.5</Version>
+    <Authors>Fioon</Authors>
+    <Description>Imports watched dates from an AniDB MyList XML export into Shoko Daily.</Description>
+    <ShokoServerRoot Condition="'$(ShokoServerRoot)' == ''">../ShokoServer</ShokoServerRoot>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="$(ShokoServerRoot)/Shoko.Abstractions/Shoko.Abstractions.csproj"
+                      Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Web/index.html" />
+    <AssemblyMetadata Include="PackageID" Value="0d89b27b-d4e7-4e60-97ca-696a59f9fd5e" />
+    <AssemblyMetadata Include="PackageName" Value="AniDB Watch History Import" />
+    <AssemblyMetadata Include="PackageOverview" Value="Imports watched dates from AniDB MyList XML into Shoko's configured AniDB user." />
+    <AssemblyMetadata Include="PackageTags" Value="anidb,watch-history,import" />
+    <AssemblyMetadata Include="RuntimeIdentifier" Value="any" />
+  </ItemGroup>
+
+  <Target Name="CheckShokoSource" BeforeTargets="ResolveProjectReferences"
+          Condition="!Exists('$(ShokoServerRoot)/Shoko.Abstractions/Shoko.Abstractions.csproj')">
+    <Error Text="Shoko Daily source was not found at '$(ShokoServerRoot)'. Set /p:ShokoServerRoot=/path/to/ShokoServer." />
+  </Target>
+</Project>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Shoko.Plugin.MovieMissingFilter</AssemblyName>
+    <RootNamespace>Shoko.Plugin.MovieMissingFilter</RootNamespace>
+    <Version>0.12.0</Version>
+    <Authors>MovieMissingFilter</Authors>
+    <Description>Configurable runtime enhancement for Shoko Missing Episodes with independent E/S/O visibility, redundant movie-layout suppression, and aligned dashboard/series-detail counters without modifying Shoko or its database.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.81" ExcludeAssets="runtime" />
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.2.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

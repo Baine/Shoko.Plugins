@@ -1,0 +1,253 @@
+name: NFO Generator
+
+on:
+  push:
+    paths:
+      - 'Shoko.Plugin.NfoGenerator/**'
+      - '.github/workflows/nfo-generator.yml'
+  pull_request:
+    paths:
+      - 'Shoko.Plugin.NfoGenerator/**'
+      - '.github/workflows/nfo-generator.yml'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfo-generator
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Release
+
+      - name: Run SelfCheck
+        run: dotnet run --project Shoko.Plugin.NfoGenerator/tools/NfoGenerator.SelfCheck/NfoGenerator.SelfCheck.csproj -c Release
+
+  publish:
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'nfo-generator/v')
+    name: Publish ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set release variables
+        id: vars
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${TAG#nfo-generator/}"
+          VERSION="${TAG_VERSION#v}"
+          SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev\.[0-9]+)?$'
+
+          if [[ ! "$VERSION" =~ $SEMVER ]]; then
+            echo "Tag is not a semantic version: $TAG" >&2
+            exit 1
+          fi
+
+          if [[ "${{ github.event.release.prerelease }}" == 'true' ]]; then
+            FILE_SUFFIX='_dev'
+          else
+            FILE_SUFFIX=''
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "file_version=v${VERSION}${FILE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        shell: bash
+        env:
+          PUBLISH_DIR: ${{ runner.temp }}/nfo-generator/${{ matrix.rid }}
+          RELEASE_CHANNEL: ${{ github.event.release.prerelease && 'Dev' || 'Stable' }}
+        run: |
+          rm -rf "$PUBLISH_DIR"
+          mkdir -p "$PUBLISH_DIR"
+          dotnet publish Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Release -r "${{ matrix.rid }}" --no-self-contained -o "$PUBLISH_DIR" -p:Version="${{ steps.vars.outputs.version }}"
+
+      - name: Package ZIP (Linux)
+        if: runner.os == 'Linux'
+        id: pkg_linux
+        shell: bash
+        env:
+          PUBLISH_DIR: ${{ runner.temp }}/nfo-generator/${{ matrix.rid }}
+        run: |
+          ZIP_NAME="NfoGenerator-${{ steps.vars.outputs.file_version }}_${{ matrix.rid }}.zip"
+          (cd "$PUBLISH_DIR" && zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" .)
+          echo "zip_path=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Package ZIP (Windows)
+        if: runner.os == 'Windows'
+        id: pkg_win
+        shell: pwsh
+        env:
+          PUBLISH_DIR: ${{ runner.temp }}/nfo-generator/${{ matrix.rid }}
+        run: |
+          $ZipName = "NfoGenerator-${{ steps.vars.outputs.file_version }}_${{ matrix.rid }}.zip"
+          Compress-Archive -Path "$env:PUBLISH_DIR\*" -DestinationPath "$env:GITHUB_WORKSPACE\$ZipName" -Force
+          "zip_path=$ZipName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload asset to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          ZIP_PATH: ${{ runner.os == 'Windows' && steps.pkg_win.outputs.zip_path || steps.pkg_linux.outputs.zip_path }}
+        run: gh release upload "$TAG" "$ZIP_PATH" --clobber --repo "$GITHUB_REPOSITORY"
+
+  update-manifest:
+    if: needs.publish.result == 'success' && github.event_name == 'release' && startsWith(github.event.release.tag_name, 'nfo-generator/v')
+    name: Update manifest on main
+    needs: [publish]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: plugin-manifest-update
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          MANIFEST='manifest.json'
+          PACKAGE_UUID='5c5482c1-3dd0-49cb-b862-d57e305da353'
+          CSPROJ='Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj'
+          TAG_VERSION="${TAG#nfo-generator/}"
+          VERSION="${TAG_VERSION#v}"
+
+          MATCH_COUNT="$(jq --arg package_uuid "$PACKAGE_UUID" \
+            'if type == "array" then map(select(.id == $package_uuid)) | length else 0 end' \
+            "$MANIFEST")"
+          if [[ "$MATCH_COUNT" -ne 1 ]]; then
+            echo "Expected exactly one manifest entry for $PACKAGE_UUID, found $MATCH_COUNT" >&2
+            exit 1
+          fi
+
+          if [[ "${{ github.event.release.prerelease }}" == 'true' ]]; then
+            FILE_SUFFIX='_dev'
+            CHANNEL='Dev'
+          else
+            FILE_SUFFIX=''
+            CHANNEL='Stable'
+          fi
+
+          SOURCE_REVISION="$(git rev-list -n 1 "$TAG")"
+          ABSTRACTION_VERSION="$(grep -oPm1 'PackageReference Include="Shoko\.Abstractions" Version="\K[^"]+' "$CSPROJ" || true)"
+          if [[ -z "$ABSTRACTION_VERSION" ]]; then
+            echo "Missing Shoko.Abstractions version in $CSPROJ" >&2
+            exit 1
+          fi
+          ABSTRACTION_VERSION="${ABSTRACTION_VERSION%%-*}"
+
+          RELEASE_DATA="$(gh release view "$TAG" --repo "$REPOSITORY" --json publishedAt,isPrerelease,body)"
+          RELEASED_AT="$(jq -r '.publishedAt' <<< "$RELEASE_DATA")"
+          IS_PRERELEASE="$(jq -r '.isPrerelease' <<< "$RELEASE_DATA")"
+          RELEASE_NOTES="$(jq -r '.body // ""' <<< "$RELEASE_DATA")"
+          if [[ "$IS_PRERELEASE" == 'true' ]]; then
+            CHANNEL='Dev'
+          else
+            CHANNEL='Stable'
+          fi
+
+          ARCHIVE_DIR="$RUNNER_TEMP/nfo-generator-archives"
+          rm -rf "$ARCHIVE_DIR"
+          mkdir -p "$ARCHIVE_DIR"
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern "NfoGenerator-v${VERSION}${FILE_SUFFIX}_*.zip" --dir "$ARCHIVE_DIR"
+
+          ARCHIVES_JSON='[]'
+          for RID in linux-arm64 linux-x64 win-x64; do
+            ZIP_NAME="NfoGenerator-v${VERSION}${FILE_SUFFIX}_${RID}.zip"
+            ZIP_PATH="$ARCHIVE_DIR/$ZIP_NAME"
+            if [[ ! -f "$ZIP_PATH" ]]; then
+              echo "Missing complete publish archive: $ZIP_NAME" >&2
+              exit 1
+            fi
+            CHECKSUM="$(sha256sum "$ZIP_PATH" | cut -d' ' -f1)"
+            URL="https://github.com/${REPOSITORY}/releases/download/${TAG}/${ZIP_NAME}"
+            ARCHIVES_JSON="$(jq -c \
+              --arg runtime "$RID" \
+              --arg abstraction "$ABSTRACTION_VERSION" \
+              --arg url "$URL" \
+              --arg checksum "$CHECKSUM" \
+              '. + [{runtime: $runtime, abstraction: $abstraction, url: $url, checksum: $checksum}]' \
+              <<< "$ARCHIVES_JSON")"
+          done
+
+          RELEASE_ENTRY="$(jq -n \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --arg source_revision "$SOURCE_REVISION" \
+            --arg released_at "$RELEASED_AT" \
+            --arg channel "$CHANNEL" \
+            --arg release_notes "$RELEASE_NOTES" \
+            --argjson archives "$ARCHIVES_JSON" \
+            '{version: $version, tag: $tag, source_revision: $source_revision, released_at: $released_at, channel: $channel, release_notes: $release_notes, archives: $archives}')"
+
+          jq --arg package_uuid "$PACKAGE_UUID" --argjson release "$RELEASE_ENTRY" \
+            'map(if .id == $package_uuid then .releases = [$release] + (.releases | map(select(.version != $release.version))) else . end)' \
+            "$MANIFEST" > "$MANIFEST.tmp"
+          mv "$MANIFEST.tmp" "$MANIFEST"
+
+          if git diff --quiet -- "$MANIFEST"; then
+            echo "Manifest is already current; skipping commit"
+            exit 0
+          fi
+
+          mapfile -t CHANGED_FILES < <(git diff --name-only)
+          if [[ "${#CHANGED_FILES[@]}" -ne 1 || "${CHANGED_FILES[0]}" != "$MANIFEST" ]]; then
+            printf 'Unexpected files changed:\n%s\n' "${CHANGED_FILES[*]}" >&2
+            exit 1
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- "$MANIFEST"
+          git commit -m "ci: update NFO Generator manifest for ${TAG}"
+          git push origin HEAD:main

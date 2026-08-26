@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AniDB Watch History</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #101318; color: #e8edf3; }
+    main { width: min(1050px, calc(100% - 32px)); margin: 28px auto; }
+    h1 { margin: 0 0 8px; font-size: 1.55rem; }
+    .lead { margin: 0 0 22px; color: #aeb8c5; }
+    .card { background: #191e26; border: 1px solid #303846; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .row { display: grid; grid-template-columns: 190px 1fr; gap: 14px; align-items: center; margin: 12px 0; }
+    .label { color: #aeb8c5; }
+    input[type=file] { width: 100%; padding: 10px; background: #11151b; border: 1px solid #3a4453; border-radius: 6px; color: inherit; }
+    .check { display: flex; align-items: center; gap: 9px; }
+    .checks { display: grid; gap: 9px; }
+    .hint { color: #8e9aaa; font-size: .82rem; margin-left: 27px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    button { border: 0; border-radius: 6px; padding: 10px 16px; font-weight: 650; cursor: pointer; color: white; background: #3979c6; }
+    button.import { background: #2e8b57; }
+    button:disabled { cursor: not-allowed; opacity: .42; }
+    .status { min-height: 24px; margin-top: 14px; color: #aeb8c5; }
+    .status.error { color: #ff8d8d; }
+    .status.ok { color: #77dca4; }
+    .confirm-box { margin-top: 16px; padding: 14px; border: 1px solid #c78b2d; border-radius: 7px; background: #241d12; }
+    .confirm-box p { margin: 0 0 12px; color: #f0cd91; }
+    .confirm-box button.cancel { background: #596270; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .metric { background: #11151b; border: 1px solid #303846; border-radius: 7px; padding: 12px; }
+    .metric span { display: block; color: #9ea9b6; font-size: .82rem; margin-bottom: 4px; }
+    .metric strong { font-size: 1.3rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid #303846; text-align: left; vertical-align: top; }
+    th { color: #aeb8c5; }
+    .hidden { display: none; }
+    .warning { border-left: 4px solid #e0a43a; padding-left: 12px; color: #e8c985; }
+    @media (max-width: 650px) { .row { grid-template-columns: 1fr; gap: 5px; } main { width: min(100% - 20px, 1050px); margin-top: 14px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AniDB Watch History Import</h1>
+  <p class="lead">Imports only records with a valid <code>viewdate</code>. Records with <code>viewdate = "-"</code> never change Shoko.</p>
+
+  <section class="card">
+    <div class="row"><div class="label">Target user</div><strong id="targetUser">Checking Shoko AniDB user…</strong></div>
+    <div class="row"><label class="label" for="xmlFile">AniDB MyList XML</label><input id="xmlFile" type="file" accept=".xml,application/xml,text/xml"></div>
+    <div class="row">
+      <div class="label">Matching</div>
+      <div class="checks">
+        <label class="check"><input id="verifyEid" type="checkbox" checked> Require FID → EID match</label>
+        <label class="check"><input id="allowEidFallback" type="checkbox"> If FID is missing, match the exact AniDB EID</label>
+        <div class="hint">Use the fallback when Shoko contains another release of the same episode. AniDB EIDs are globally unique.</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="analyzeButton" type="button" disabled>Analyze XML</button>
+      <button id="importButton" class="import" type="button" disabled>Import watched status</button>
+    </div>
+    <div id="confirmPanel" class="confirm-box hidden">
+      <p id="confirmText">Import the analyzed watched statuses into Shoko?</p>
+      <div class="actions">
+        <button id="confirmImportButton" class="import" type="button">Confirm import</button>
+        <button id="cancelImportButton" class="cancel" type="button">Cancel</button>
+      </div>
+    </div>
+    <div id="status" class="status"></div>
+  </section>
+
+  <section id="resultCard" class="card hidden">
+    <h2 id="resultTitle">Analysis</h2>
+    <p id="safety" class="warning hidden">This was a dry-run. No watched status was changed.</p>
+    <div id="metrics" class="grid"></div>
+  </section>
+
+  <section id="issuesCard" class="card hidden">
+    <h2>Issues</h2>
+    <p id="issueNote" class="lead"></p>
+    <div style="overflow:auto">
+      <table><thead><tr><th>FID</th><th>EID</th><th>Code</th><th>Message</th></tr></thead><tbody id="issues"></tbody></table>
+    </div>
+  </section>
+</main>
+<script>
+  'use strict';
+  const apiBase = '/api/plugin/anidb-watch-history';
+  const fileInput = document.getElementById('xmlFile');
+  const verifyInput = document.getElementById('verifyEid');
+  const fallbackInput = document.getElementById('allowEidFallback');
+  const analyzeButton = document.getElementById('analyzeButton');
+  const importButton = document.getElementById('importButton');
+  const confirmPanel = document.getElementById('confirmPanel');
+  const confirmImportButton = document.getElementById('confirmImportButton');
+  const cancelImportButton = document.getElementById('cancelImportButton');
+  const statusBox = document.getElementById('status');
+  let analyzedSignature = null;
+  let analyzedImportCount = 0;
+  let apiKey = '';
+
+  function getApiKey() {
+    try {
+      const sessionState = JSON.parse(sessionStorage.getItem('state') || '{}');
+      if (sessionState.apiSession?.apikey) return sessionState.apiSession.apikey;
+    } catch { /* Try persistent storage below. */ }
+    try {
+      return JSON.parse(localStorage.getItem('apiSession') || '{}').apikey || '';
+    } catch { return ''; }
+  }
+
+  function signature() {
+    const f = fileInput.files[0];
+    return f ? `${f.name}|${f.size}|${f.lastModified}|${verifyInput.checked}|${fallbackInput.checked}` : null;
+  }
+
+  function setStatus(message, type = '') {
+    statusBox.textContent = message;
+    statusBox.className = `status ${type}`;
+  }
+
+  async function api(path, options = {}) {
+    const headers = new Headers(options.headers || {});
+    headers.set('apikey', apiKey);
+    const response = await fetch(apiBase + path, { ...options, headers });
+    const text = await response.text();
+    let body;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    if (!response.ok) {
+      const message = typeof body === 'string' ? body : body?.detail || body?.title || `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    return body;
+  }
+
+  function resetAnalysis() {
+    analyzedSignature = null;
+    analyzedImportCount = 0;
+    importButton.disabled = true;
+    confirmPanel.classList.add('hidden');
+    document.getElementById('resultCard').classList.add('hidden');
+    document.getElementById('issuesCard').classList.add('hidden');
+  }
+
+  function renderResult(result) {
+    const field = key => result[key] ?? result[key.charAt(0).toLowerCase() + key.slice(1)] ?? 0;
+    const labels = [
+      ['TotalXmlRecords', 'XML records'], ['EligibleRecords', 'Valid viewdate'],
+      ['SkippedNoViewDate', 'No viewdate / "-"'], ['SkippedInvalidViewDate', 'Invalid records'],
+      ['DuplicateRecords', 'Duplicates'], ['FidNotFound', 'FID not found'],
+      ['EpisodeFallbackMatches', 'EID fallback matches'],
+      ['EpisodeMismatch', 'EID mismatch'], ['EpisodeNotFound', 'Episode not found'],
+      ['AlreadyWatched', 'Already watched'], [result.DryRun ? 'WouldImport' : 'Imported', result.DryRun ? 'Would import' : 'Imported'],
+      ['SaveVerificationFailed', 'Save verification failed'],
+      ['Errors', 'Errors']
+    ];
+    const isDryRun = Boolean(field('DryRun'));
+    document.getElementById('resultTitle').textContent = isDryRun ? 'Analysis result' : 'Import result';
+    document.getElementById('safety').classList.toggle('hidden', !isDryRun);
+    document.getElementById('metrics').innerHTML = labels.map(([key, label]) =>
+      `<div class="metric"><span>${label}</span><strong>${Number(field(key)).toLocaleString()}</strong></div>`).join('');
+    document.getElementById('resultCard').classList.remove('hidden');
+
+    const issues = result.Issues || result.issues || [];
+    const visible = issues.slice(0, 250);
+    document.getElementById('issues').innerHTML = visible.map(issue =>
+      `<tr><td>${escapeHtml(issue.FileId ?? issue.fileId ?? '')}</td><td>${escapeHtml(issue.EpisodeId ?? issue.episodeId ?? '')}</td><td>${escapeHtml(issue.Code ?? issue.code ?? '')}</td><td>${escapeHtml(issue.Message ?? issue.message ?? '')}</td></tr>`).join('');
+    document.getElementById('issueNote').textContent = issues.length > visible.length
+      ? `Showing the first ${visible.length} of ${issues.length} reported issues.` : `${issues.length} issue(s) reported.`;
+    document.getElementById('issuesCard').classList.toggle('hidden', issues.length === 0);
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement('div'); div.textContent = String(value); return div.innerHTML;
+  }
+
+  function makeForm() {
+    const form = new FormData();
+    form.append('XmlFile', fileInput.files[0]);
+    form.append('VerifyEpisodeId', String(verifyInput.checked));
+    form.append('AllowEpisodeIdFallback', String(fallbackInput.checked));
+    return form;
+  }
+
+  async function run(dryRun) {
+    if (!fileInput.files[0]) return;
+    analyzeButton.disabled = true;
+    importButton.disabled = true;
+    confirmPanel.classList.add('hidden');
+    setStatus(dryRun ? 'Analyzing XML…' : 'Importing watched status…');
+    try {
+      const result = await api(dryRun ? '/analyze' : '/import', { method: 'POST', body: makeForm() });
+      renderResult(result);
+      if (dryRun) {
+        analyzedSignature = signature();
+        const count = result.WouldImport ?? result.wouldImport ?? 0;
+        analyzedImportCount = count;
+        importButton.disabled = count < 1;
+        setStatus(`Analysis completed. ${count.toLocaleString()} episode(s) can be imported.`, 'ok');
+      } else {
+        analyzedSignature = null;
+        const count = result.Imported ?? result.imported ?? 0;
+        const failed = result.SaveVerificationFailed ?? result.saveVerificationFailed ?? 0;
+        setStatus(failed > 0
+          ? `Import completed with ${failed.toLocaleString()} verification failure(s). Check the issue list.`
+          : `Import completed. ${count.toLocaleString()} episode(s) verified as watched.`, failed > 0 ? 'error' : 'ok');
+      }
+    } catch (error) {
+      setStatus(error.message || String(error), 'error');
+    } finally {
+      analyzeButton.disabled = !fileInput.files[0] || !apiKey;
+      if (signature() !== analyzedSignature) importButton.disabled = true;
+    }
+  }
+
+  fileInput.addEventListener('change', () => {
+    resetAnalysis();
+    analyzeButton.disabled = !fileInput.files[0] || !apiKey;
+    setStatus('');
+  });
+  verifyInput.addEventListener('change', resetAnalysis);
+  fallbackInput.addEventListener('change', resetAnalysis);
+  analyzeButton.addEventListener('click', () => run(true));
+  importButton.addEventListener('click', () => {
+    if (signature() !== analyzedSignature) return resetAnalysis();
+    document.getElementById('confirmText').textContent =
+      `Import ${analyzedImportCount.toLocaleString()} analyzed watched status(es) into the configured Shoko AniDB user? This operation only adds watched statuses.`;
+    confirmPanel.classList.remove('hidden');
+  });
+  confirmImportButton.addEventListener('click', () => {
+    if (signature() !== analyzedSignature) return resetAnalysis();
+    run(false);
+  });
+  cancelImportButton.addEventListener('click', () => confirmPanel.classList.add('hidden'));
+
+  (async () => {
+    apiKey = getApiKey();
+    if (!apiKey) {
+      document.getElementById('targetUser').textContent = 'No active Shoko WebUI session';
+      setStatus('Open this page through the authenticated Shoko WebUI.', 'error');
+      return;
+    }
+    try {
+      const user = await api('/anidb-user');
+      document.getElementById('targetUser').textContent = `${user.Username ?? user.username} (ID ${user.Id ?? user.id})`;
+      analyzeButton.disabled = !fileInput.files[0];
+    } catch (error) {
+      document.getElementById('targetUser').textContent = 'Not configured';
+      setStatus(error.message || String(error), 'error');
+    }
+  })();
+</script>
+</body>
+</html>
