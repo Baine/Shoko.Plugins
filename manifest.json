@@ -46,6 +46,34 @@
     "image_url": null,
     "releases": [
       {
+        "version": "0.1.12",
+        "tag": "nfo-generator/v0.1.12",
+        "source_revision": "51b24f9fa3e66c467b9fb388376823db1b23948f",
+        "released_at": "2026-08-26T05:48:36Z",
+        "channel": "Stable",
+        "release_notes": "**Full Changelog**: https://github.com/Baine/Shoko.Plugins/compare/v0.1.11...nfo-generator/v0.1.12",
+        "archives": [
+          {
+            "runtime": "linux-arm64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.12/NfoGenerator-v0.1.12_linux-arm64.zip",
+            "checksum": "c9b19f9f6dbd28a065dde90b4a5d04152cda36ba9793c35362bc900fc11280b0"
+          },
+          {
+            "runtime": "linux-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.12/NfoGenerator-v0.1.12_linux-x64.zip",
+            "checksum": "8e75f24da2fc9b8531646895841b30dea73443d08cf5a4cd7e31f124642ace10"
+          },
+          {
+            "runtime": "win-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.12/NfoGenerator-v0.1.12_win-x64.zip",
+            "checksum": "b41efb63e8b6c10be740b71b38fee9656f7b738624329ca7a970e7cd4c7a2ecc"
+          }
+        ]
+      },
+      {
         "version": "0.1.11",
         "tag": "v0.1.11",
         "source_revision": "d457adaa2422c40b4036058d970c49f7911c9a4d",
