@@ -15,8 +15,11 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <AssemblyMetadata Include="PackageID" Value="4e525337-8c50-4bd2-a8ec-feb3f202d9f7" />
+    <AssemblyMetadata Include="PackageName" Value="Movie Missing Filter" />
+    <AssemblyMetadata Include="PackageOverview" Value="Configurable Missing Episodes filter with independent Normal (E), Special (S), and Other (O) visibility, redundant movie-layout suppression, and aligned counters without modifying Shoko or its database." />
+    <AssemblyMetadata Include="PackageTags" Value="missing-episodes,movie,anidb" />
     <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.81" ExcludeAssets="runtime" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
-    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.2.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>

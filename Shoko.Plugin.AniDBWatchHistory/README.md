@@ -73,5 +73,5 @@ If Shoko has no user with the AniDB login option enabled, the endpoint returns H
 
 ## Compatibility pin
 
-The source was verified against ShokoServer commit `fecf6c4a5248fc80088d7facb274eb0e4209c6d5e`.
+The source was verified against ShokoServer commit `1d1f6d57420d035d2c1b70936fccaff35eb6dab7`.
 Daily can introduce breaking abstraction changes; rebuild the plugin against the exact Shoko Daily checkout you run.
