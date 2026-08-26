@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: nfo-generator
-  cancel-in-progress: false
-
 jobs:
   ci:
     if: github.event_name != 'release'

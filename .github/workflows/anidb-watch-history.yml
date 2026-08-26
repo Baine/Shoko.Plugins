@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: anidb-watch-history
-  cancel-in-progress: false
-
 jobs:
   ci:
     if: github.event_name != 'release'

@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: movie-missing-filter
-  cancel-in-progress: false
-
 jobs:
   ci:
     if: github.event_name != 'release'
