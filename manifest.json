@@ -28,7 +28,36 @@
     ],
     "image_url": null,
     "dependencies": [],
-    "releases": []
+    "releases": [
+      {
+        "version": "0.12.0",
+        "tag": "movie-missing-filter/v0.12.0",
+        "source_revision": "e4379aa72e58591d603e856ea07e2faf830b2118",
+        "released_at": "2026-08-26T05:58:12Z",
+        "channel": "Stable",
+        "release_notes": "**Full Changelog**: https://github.com/Baine/Shoko.Plugins/compare/nfo-generator/v0.1.12...movie-missing-filter/v0.12.0",
+        "archives": [
+          {
+            "runtime": "linux-arm64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.0/MovieMissingFilter-v0.12.0_linux-arm64.zip",
+            "checksum": "d14497c1751d98f7435ff309aa5a1cf0fd2c28b0448a2c8a704e936775ab81e7"
+          },
+          {
+            "runtime": "linux-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.0/MovieMissingFilter-v0.12.0_linux-x64.zip",
+            "checksum": "19a3d858d11aeadaa62a74212024bab7bcbc1155ef7fca66a85faaeb8de01f35"
+          },
+          {
+            "runtime": "win-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.0/MovieMissingFilter-v0.12.0_win-x64.zip",
+            "checksum": "0909beb4aa05cfc4c437fded89e14bdd9169537e30fd3fda34338b317367973a"
+          }
+        ]
+      }
+    ]
   },
   {
     "id": "5c5482c1-3dd0-49cb-b862-d57e305da353",
