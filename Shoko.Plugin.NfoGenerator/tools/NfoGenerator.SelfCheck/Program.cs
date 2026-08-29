@@ -242,6 +242,7 @@ internal static class NfoCleanupCheck
         service.DeleteForPath(Path.Combine(root, "gone.mkv"));
         AssertMissing(Path.Combine(root, "tvshow.nfo"), "delete sweep retained an orphan plugin show NFO");
         AssertExists(Path.Combine(root, "poster.jpg"), "delete sweep removed artwork from an empty folder");
+        CheckGeneratedOnlyDirectoryCleanup(service, videoService, outputDir);
         CheckDeleteFailureOutcome(service, outputDir);
         CheckMissingRelocationCleanup(service, videoService, outputDir);
         Console.WriteLine("OK NFO cleanup");
@@ -251,6 +252,79 @@ internal static class NfoCleanupCheck
         => (int)typeof(NfoGeneratorService)
             .GetMethod("SweepDirectory", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(service, [folder, livePaths])!;
+
+    private static void CheckGeneratedOnlyDirectoryCleanup(NfoGeneratorService service, IVideoService videoService, string outputDir)
+    {
+        var managedRoot = Path.Combine(outputDir, "managed-cleanup");
+        var orphan = Path.Combine(managedRoot, "orphan");
+        var nfoOnly = Path.Combine(managedRoot, "nfo-only");
+        var nested = Path.Combine(managedRoot, "nested");
+        var nestedChild = Path.Combine(nested, "child");
+        var protectedByFile = Path.Combine(managedRoot, "protected-file");
+        var protectedByNfo = Path.Combine(managedRoot, "protected-nfo");
+        var protectedByChild = Path.Combine(managedRoot, "protected-child");
+        var nestedManagedRoot = Path.Combine(managedRoot, "nested-managed-root");
+        var empty = Path.Combine(managedRoot, "empty");
+
+        Directory.CreateDirectory(orphan);
+        WritePluginNfo(Path.Combine(orphan, "movie.nfo"), movie: true);
+        Write(Path.Combine(orphan, "poster.jpg"), "generated poster");
+        Write(Path.Combine(orphan, "fanart.jpg"), "generated fanart");
+
+        Directory.CreateDirectory(nfoOnly);
+        WritePluginNfo(Path.Combine(nfoOnly, "episode.nfo"));
+
+        Directory.CreateDirectory(nestedChild);
+        Write(Path.Combine(nested, "poster.png"), "generated poster");
+        Write(Path.Combine(nestedChild, "thumb-42.webp"), "generated thumb");
+
+        Directory.CreateDirectory(protectedByFile);
+        WritePluginNfo(Path.Combine(protectedByFile, "tvshow.nfo"));
+        Write(Path.Combine(protectedByFile, "poster.jpg"), "artwork");
+        Write(Path.Combine(protectedByFile, "notes.txt"), "keep me");
+
+        Directory.CreateDirectory(protectedByNfo);
+        Write(Path.Combine(protectedByNfo, "fanart.jpg"), "artwork");
+        WriteUserNfo(Path.Combine(protectedByNfo, "movie.nfo"));
+
+        Directory.CreateDirectory(Path.Combine(protectedByChild, "assets"));
+        Write(Path.Combine(protectedByChild, "poster.jpg"), "artwork");
+        Write(Path.Combine(protectedByChild, "assets", "notes.txt"), "keep me");
+
+        Directory.CreateDirectory(empty);
+        Directory.CreateDirectory(nestedManagedRoot);
+        Write(Path.Combine(nestedManagedRoot, "poster.jpg"), "nested root artwork");
+        Write(Path.Combine(managedRoot, "poster.jpg"), "root artwork");
+
+        var proxy = (VideoServiceProxy)(object)videoService;
+        proxy.Files = [];
+        proxy.ManagedFolders =
+        [
+            Proxy<IManagedFolder>(method => method.Name == "get_Path" ? managedRoot : null),
+            Proxy<IManagedFolder>(method => method.Name == "get_Path" ? nestedManagedRoot : null),
+        ];
+        int removed = (int)typeof(NfoGeneratorService)
+            .GetMethod("SweepLibrary", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(service, null)!;
+
+        AssertEqual(7, removed, "generated-only sweep deletion count changed");
+        AssertDirectoryMissing(orphan, "generated-only folder was retained");
+        AssertDirectoryMissing(nfoOnly, "NFO-only folder was retained after its owned NFO was swept");
+        AssertDirectoryMissing(nested, "bottom-up generated-only folder tree was retained");
+        AssertDirectoryExists(managedRoot, "managed import root was removed");
+        AssertExists(Path.Combine(managedRoot, "poster.jpg"), "artwork at the managed import root was removed");
+        AssertDirectoryExists(nestedManagedRoot, "nested managed import root was removed by its parent sweep");
+        AssertExists(Path.Combine(nestedManagedRoot, "poster.jpg"), "artwork at a nested managed import root was removed");
+        AssertExists(Path.Combine(protectedByFile, "poster.jpg"), "artwork beside a foreign file was removed");
+        AssertExists(Path.Combine(protectedByFile, "notes.txt"), "foreign file was removed");
+        AssertExists(Path.Combine(protectedByNfo, "movie.nfo"), "user NFO did not protect its folder");
+        AssertExists(Path.Combine(protectedByChild, "poster.jpg"), "child directory did not protect its parent");
+        AssertDirectoryExists(empty, "unrelated empty directory was removed");
+        AssertEqual(true, SidecarWriter.IsGeneratedSidecarName("poster.jpg"), "poster sidecar was not recognized");
+        AssertEqual(true, SidecarWriter.IsGeneratedSidecarName("thumb-42.webp"), "file-id thumb sidecar was not recognized");
+        AssertEqual(false, SidecarWriter.IsGeneratedSidecarName("poster.backup.jpg"), "foreign poster filename was recognized as plugin output");
+        proxy.ManagedFolders = [];
+    }
 
     private static void CheckDeleteFailureOutcome(NfoGeneratorService service, string outputDir)
     {
@@ -276,9 +350,14 @@ internal static class NfoCleanupCheck
 
     private static void CheckMissingRelocationCleanup(NfoGeneratorService service, IVideoService videoService, string outputDir)
     {
-        var previousPath = Path.Combine(outputDir, "relocation", "missing.mkv");
+        var managedRoot = Path.Combine(outputDir, "relocation");
+        var previousFolder = Path.Combine(managedRoot, "orphan");
+        var previousPath = Path.Combine(previousFolder, "missing.mkv");
         Directory.CreateDirectory(Path.GetDirectoryName(previousPath)!);
         NfoWriter.WriteEpisode(Path.ChangeExtension(previousPath, ".nfo"), new EpisodeNfo { Title = "Relocation" });
+        Write(Path.Combine(previousFolder, "poster.jpg"), "generated poster");
+        Write(Path.Combine(previousFolder, "fanart.jpg"), "generated fanart");
+        ((VideoServiceProxy)(object)videoService).ManagedFolders = [Proxy<IManagedFolder>(method => method.Name == "get_Path" ? managedRoot : null)];
         var systemService = Proxy<ISystemService>(method => method.Name == "WaitForStartupAsync" ? Task.CompletedTask : null);
         var job = new NfoGenerationJob(service, null!, videoService, null!, systemService)
         {
@@ -288,6 +367,15 @@ internal static class NfoCleanupCheck
         };
         job.Process().GetAwaiter().GetResult();
         AssertMissing(Path.ChangeExtension(previousPath, ".nfo"), "relocation cleanup skipped a missing current target");
+        AssertDirectoryMissing(previousFolder, "relocation cleanup retained a generated-only old folder");
+        AssertDirectoryExists(managedRoot, "relocation cleanup removed the managed import root");
+        var nfoOnlyFolder = Path.Combine(managedRoot, "nfo-only");
+        var nfoOnlyVideo = Path.Combine(nfoOnlyFolder, "missing.mkv");
+        Directory.CreateDirectory(nfoOnlyFolder);
+        NfoWriter.WriteEpisode(Path.ChangeExtension(nfoOnlyVideo, ".nfo"), new EpisodeNfo { Title = "Relocation" });
+        service.DeleteForPath(nfoOnlyVideo);
+        AssertDirectoryMissing(nfoOnlyFolder, "relocation cleanup retained an NFO-only old folder");
+        ((VideoServiceProxy)(object)videoService).ManagedFolders = [];
     }
 
     private static void InvokeMisplacedSweep(NfoGeneratorService service, string folder, int showId)
@@ -363,6 +451,18 @@ internal static class NfoCleanupCheck
             throw new InvalidOperationException($"NFO cleanup: {message}");
     }
 
+    private static void AssertDirectoryExists(string path, string message)
+    {
+        if (!Directory.Exists(path))
+            throw new InvalidOperationException($"NFO cleanup: {message}");
+    }
+
+    private static void AssertDirectoryMissing(string path, string message)
+    {
+        if (Directory.Exists(path))
+            throw new InvalidOperationException($"NFO cleanup: {message}");
+    }
+
     private static void AssertEqual<T>(T expected, T actual, string message)
     {
         if (!EqualityComparer<T>.Default.Equals(expected, actual))
@@ -380,11 +480,14 @@ internal static class NfoCleanupCheck
     private class VideoServiceProxy : DispatchProxy
     {
         public IReadOnlyList<IVideoFile> Files { get; set; } = [];
+        public IReadOnlyList<IManagedFolder> ManagedFolders { get; set; } = [];
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
             if (targetMethod?.Name == "GetAllVideoFiles")
                 return Files;
+            if (targetMethod?.Name == "GetAllManagedFolders")
+                return ManagedFolders;
             if (targetMethod?.Name == "GetVideoFilesByAbsolutePath")
             {
                 var folder = (string)args![0]!;

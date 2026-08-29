@@ -54,7 +54,7 @@ curl -X POST -u admin:password \
 
 ### Generate an import folder
 
-Regenerates NFOs for every available video file inside an import (managed) folder.
+Regenerates NFOs for every available video file inside an import (managed) folder, then removes orphan subfolders that contain only recognized plugin output.
 
 ```
 POST /api/plugin/NfoGenerator/folder/{folderID}
@@ -73,7 +73,7 @@ curl -X POST -u admin:password \
 
 ### Generate the library
 
-Regenerates NFOs for the entire library (all import folders). This can take a while on large libraries.
+Regenerates NFOs for the entire library (all import folders), then runs the orphan NFO/artwork and generated-only directory sweep. This can take a while on large libraries.
 
 ```
 POST /api/plugin/NfoGenerator/library

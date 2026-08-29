@@ -18,6 +18,7 @@ Shoko event or API trigger
 - A TV show's `tvshow.nfo` and artwork live at the resolved shared show root, never intentionally in a season directory.
 - Folder-level output is written only when all direct live video files belong to one series. Mixed folders receive per-file sidecars only.
 - Plugin cleanup identifies its own NFOs through embedded Shoko identity data; user-authored NFOs must be left untouched.
+- Relocation/delete cleanup walks the old path toward its managed import root. Import-folder and library jobs additionally scan all descendants bottom-up and remove only directories whose entire contents match plugin-owned NFOs or known artwork output names; all configured import roots and folders with foreign content are preserved.
 
 See [NFO format](../NFO-FORMAT.md) for emitted XML and filenames.
 

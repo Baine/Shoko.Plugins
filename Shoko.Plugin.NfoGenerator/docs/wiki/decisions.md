@@ -14,7 +14,7 @@ Do not add a separate metadata cache for generated NFO content. Comparing the se
 
 ## Cleanup is conservative
 
-Only remove sidecars that the plugin can identify as its own, and only remove folder-level artifacts when no live video remains directly in that folder. Protecting user sidecars is more important than aggressive cleanup.
+NFOs are removed only when their embedded ownership marker identifies the plugin. A generated-only directory sweep may also remove known artwork filenames, but only from managed-folder descendants whose complete direct contents are recognized plugin output and which have no child directories. Any foreign file, user-authored NFO, child directory, or unrelated empty directory blocks removal, and every managed import root (including nested roots) is protected.
 
 ## No rename responsibility
 

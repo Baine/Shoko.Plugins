@@ -10,6 +10,7 @@ A [Shoko](https://shokoanime.com/) server plugin that generates [Kodi-style](htt
 - Configurable language fallback for titles and descriptions, including Shoko's preferred title and original-language sources.
 - Adds TMDB provider IDs and uses Shoko's TMDB episode mapping for season/episode numbers when available.
 - Content-aware writes: files that are already up to date are not rewritten, so media libraries are not rescanned needlessly. Metadata updates force a rewrite regardless.
+- Cleans generated-only orphan directories after relocations and during import-folder/library runs, while preserving import roots and folders containing foreign files.
 - On-demand regeneration via plugin API triggers (per series, episode, import folder, or entire library).
 
 ## Requirements

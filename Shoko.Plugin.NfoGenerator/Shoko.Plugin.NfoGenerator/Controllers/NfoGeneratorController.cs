@@ -49,7 +49,7 @@ public sealed class NfoGeneratorController : ControllerBase
         return Accepted(new { status = "queued" });
     }
 
-    /// <summary>Regenerates all NFO files inside an import folder.</summary>
+    /// <summary>Regenerates NFO files and sweeps orphan plugin output inside an import folder.</summary>
     [HttpPost("folder/{folderID}")]
     public async Task<IActionResult> GenerateFolder(int folderID)
     {
@@ -59,7 +59,7 @@ public sealed class NfoGeneratorController : ControllerBase
         return Accepted(new { status = "queued" });
     }
 
-    /// <summary>Regenerates NFO files for the entire library and sweeps orphan NFO/art files.</summary>
+    /// <summary>Regenerates the library and sweeps orphan plugin output and generated-only folders.</summary>
     [HttpPost("library")]
     public async Task<IActionResult> GenerateLibrary()
     {

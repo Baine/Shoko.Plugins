@@ -82,4 +82,5 @@ Identical to the TV show layout but with a `<movie>` root element.
 - `uniqueid` includes TMDB when Shoko has a mapping, plus AniDB and Shoko IDs. TMDB is the default identifier when present; AniDB remains the default fallback.
 - For TMDB-mapped episodes, the emitted season and episode numbers follow the mapped TMDB ordering.
 - A generation pass removes old plugin-generated `tvshow.nfo` files from season folders once the same TMDB show's root NFO has been written. User-authored NFOs are not removed.
+- Import-folder and library runs scan managed-folder descendants bottom-up. A non-root directory is removed only when it contains at least one file, no child directories, and every file is either an ownership-marked plugin NFO or a recognized plugin artwork name (`poster.*`, `fanart.*`, `banner.*`, `logo.*`, `disc.*`, `thumb.*`, or `thumb-{fileId}.*`). Any other file or user-authored NFO protects the directory; all managed import roots (including nested roots) and unrelated empty directories are never removed.
 - Empty/null fields are omitted entirely.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Shoko.Abstractions.Metadata.Containers;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Abstractions.Metadata.Image;
@@ -33,6 +34,30 @@ internal static class SidecarWriter
             if (WriteImage(folder, name, entity.GetBestImageForType(type), reportFailure) is { } filename)
                 art[name] = filename;
         return art;
+    }
+
+    /// <summary>
+    /// Returns whether a filename matches an artwork sidecar emitted by this
+    /// plugin. The plain <c>thumb.*</c> form is retained for cleanup of output
+    /// from older plugin versions; current per-file thumbs use
+    /// <c>thumb-{fileId}.*</c>.
+    /// </summary>
+    internal static bool IsGeneratedSidecarName(string path)
+    {
+        var filename = Path.GetFileName(path);
+        var extension = Path.GetExtension(filename);
+        if (extension.Length < 2)
+            return false;
+
+        var stem = Path.GetFileNameWithoutExtension(filename);
+        if (TypeToName.Values.Contains(stem, StringComparer.OrdinalIgnoreCase)
+            || stem.Equals("thumb", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        const string prefix = "thumb-";
+        return stem.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(stem.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var fileId)
+            && fileId >= 0;
     }
 
     /// <summary>Writes a stable per-file thumb sidecar. Returns the filename or null.</summary>

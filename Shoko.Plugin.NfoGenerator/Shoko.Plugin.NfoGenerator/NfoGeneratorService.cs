@@ -132,7 +132,27 @@ public sealed class NfoGeneratorService : IHostedService
 
     /// <summary>Generates NFO files for every available video file inside an import folder.</summary>
     public int GenerateForFolder(IManagedFolder folder, bool force = false)
-        => GenerateForFiles(_videoService.GetVideoFilesInManagedFolder(folder), force);
+    {
+        var files = _videoService.GetVideoFilesInManagedFolder(folder).ToList();
+        int written = GenerateForFiles(files, force);
+        try
+        {
+            var managedRoots = ManagedRootKeys(_videoService.GetAllManagedFolders().Append(folder));
+            var cleanup = SweepManagedFolder(folder, IndexAvailableFiles(_videoService.GetAllVideoFiles()), managedRoots);
+            _logger.LogInformation(
+                "Import folder sweep finished: {Removed} orphan plugin file(s) and {Directories} generated-only folder(s) removed from {Folder}",
+                cleanup.Files, cleanup.Directories, folder.Path);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Unable to sweep import folder {Folder}", folder.Path);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unable to sweep import folder {Folder}", folder.Path);
+        }
+        return written;
+    }
 
     /// <summary>Generates one library series and returns the next persisted cursor, if any.</summary>
     internal LibraryStepResult GenerateLibraryStep(int seriesIndex, bool force = false)
@@ -152,7 +172,7 @@ public sealed class NfoGeneratorService : IHostedService
         SweepMisplacedShowNfos(run.Pass);
         _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", run.Written);
         int removed = SweepLibrary();
-        _logger.LogInformation("Library generation finished: {Removed} orphan NFO file(s) removed", removed);
+        _logger.LogInformation("Library generation finished: {Removed} orphan plugin file(s) removed", removed);
         _libraryRun = null;
         return new(null, run.Series.Count, null);
     }
@@ -727,8 +747,8 @@ public sealed class NfoGeneratorService : IHostedService
     // show-root NFO is generated.
     public void DeleteForPath(string videoPath)
     {
-        DeleteNfo(videoPath);
-        SweepFolder(Path.GetDirectoryName(videoPath));
+        bool nfoRemoved = DeleteNfo(videoPath);
+        SweepFolder(Path.GetDirectoryName(videoPath), nfoRemoved);
     }
 
     public void GenerateForRelocatedFile(IVideoFile file, string previousPath)
@@ -746,11 +766,11 @@ public sealed class NfoGeneratorService : IHostedService
         }
     }
 
-    private void DeleteNfo(string videoPath)
+    private bool DeleteNfo(string videoPath)
     {
         var nfoPath = Path.ChangeExtension(videoPath, ".nfo");
         if (FolderNfos.Contains(Path.GetFileName(nfoPath), StringComparer.OrdinalIgnoreCase))
-            return;
+            return false;
         var ownership = ProbeOwnership(nfoPath);
         if (ownership.Status == OwnershipProbe.Failed)
             _logger.LogWarning(ownership.Error, "Unable to inspect NFO ownership: {Path}", nfoPath);
@@ -759,21 +779,46 @@ public sealed class NfoGeneratorService : IHostedService
             var deletion = TryDelete(nfoPath);
             if (deletion.Status == DeleteStatus.Failed)
                 _logger.LogWarning(deletion.Error, "Unable to delete plugin-owned NFO: {Path}", nfoPath);
+            return deletion.Status == DeleteStatus.Deleted;
         }
+        return false;
     }
 
     private static readonly string[] FolderNfos = ["tvshow.nfo", "movie.nfo"];
 
-    /// <summary>Removes plugin-owned folder-level NFOs once no available video remains below the folder.</summary>
-    private void SweepFolder(string? folder)
+    /// <summary>
+    /// Removes stale plugin output at the old path and walks towards the owning
+    /// import folder. Generated-only subfolders are removed, but the import
+    /// folder itself is never deleted.
+    /// </summary>
+    private void SweepFolder(string? folder, bool directNfoRemoved)
     {
         if (folder is null)
             return;
         try
         {
-            if (FolderHasAvailableVideoFiles(folder))
+            var managedFolder = ResolveManagedFolder(folder, null);
+            if (managedFolder is null)
+            {
+                if (!FolderHasAvailableVideoFiles(folder))
+                    DeleteFolderNfos(folder);
                 return;
-            DeleteFolderNfos(folder);
+            }
+
+            for (var current = folder; current is not null && IsPathWithin(current, managedFolder.Path); current = Path.GetDirectoryName(current))
+            {
+                if (FolderHasAvailableVideoFiles(current))
+                    break;
+                if (!Directory.Exists(current))
+                    continue;
+
+                int removedFolderNfos = DeleteFolderNfos(current);
+                if (PathsEqual(current, managedFolder.Path))
+                    break;
+                bool removedOutput = removedFolderNfos > 0
+                    || (directNfoRemoved && PathsEqual(current, folder));
+                _ = TryDeleteGeneratedOnlyDirectory(current, removedOutput);
+            }
         }
         catch (IOException ex)
         {
@@ -788,24 +833,21 @@ public sealed class NfoGeneratorService : IHostedService
     /// <summary>
     /// Full-library orphan sweep: walks every managed folder, removes per-file
     /// episode NFOs whose direct video file is gone and folder-level plugin NFOs
-    /// in folders with no available descendant video files left.
+    /// in folders with no available descendant video files left. A bottom-up
+    /// pass then deletes non-root folders containing only recognized plugin
+    /// output.
     /// </summary>
     private int SweepLibrary()
     {
-        int removed = 0;
-        var filesByDir = _videoService.GetAllVideoFiles()
-            .Where(f => f.IsAvailable)
-            .GroupBy(f => Path.GetDirectoryName(f.Path) ?? "", StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Select(f => f.Path).ToList(), StringComparer.OrdinalIgnoreCase);
-        foreach (var managedFolder in _videoService.GetAllManagedFolders())
+        var filesByDir = IndexAvailableFiles(_videoService.GetAllVideoFiles());
+        var managedFolders = _videoService.GetAllManagedFolders().ToList();
+        var managedRoots = ManagedRootKeys(managedFolders);
+        var total = new DirectoryCleanupResult();
+        foreach (var managedFolder in managedFolders)
         {
             try
             {
-                foreach (var dir in EnumerateFolders(managedFolder.Path))
-                {
-                    filesByDir.TryGetValue(dir, out var live);
-                    removed += SweepDirectory(dir, live);
-                }
+                total += SweepManagedFolder(managedFolder, filesByDir, managedRoots);
             }
             catch (IOException ex)
             {
@@ -816,8 +858,44 @@ public sealed class NfoGeneratorService : IHostedService
                 _logger.LogWarning(ex, "Unable to sweep managed folder {Folder}", managedFolder.Path);
             }
         }
-        _logger.LogInformation("Library sweep finished: {Removed} orphan NFO file(s) removed", removed);
-        return removed;
+        _logger.LogInformation(
+            "Library sweep finished: {Removed} orphan plugin file(s) and {Directories} generated-only folder(s) removed",
+            total.Files, total.Directories);
+        return total.Files;
+    }
+
+    private static Dictionary<string, List<string>> IndexAvailableFiles(IEnumerable<IVideoFile> files)
+        => files
+            .Where(f => f.IsAvailable)
+            .GroupBy(f => Path.GetDirectoryName(f.Path) ?? "", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(f => f.Path).ToList(), StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> ManagedRootKeys(IEnumerable<IManagedFolder> managedFolders)
+        => managedFolders.Select(folder => DirectoryKey(folder.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private DirectoryCleanupResult SweepManagedFolder(
+        IManagedFolder managedFolder,
+        IReadOnlyDictionary<string, List<string>> filesByDir,
+        IReadOnlySet<string> managedRoots)
+    {
+        var directories = EnumerateFolders(managedFolder.Path).ToList();
+        int removedFiles = 0;
+        var directoriesWithRemovedOutput = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in directories)
+        {
+            filesByDir.TryGetValue(dir, out var live);
+            int removedInDirectory = SweepDirectory(dir, live);
+            removedFiles += removedInDirectory;
+            if (removedInDirectory > 0)
+                directoriesWithRemovedOutput.Add(DirectoryKey(dir));
+        }
+
+        var result = new DirectoryCleanupResult(removedFiles, 0);
+        foreach (var dir in directories
+            .Where(dir => !managedRoots.Contains(DirectoryKey(dir)))
+            .OrderByDescending(dir => dir.Length))
+            result += TryDeleteGeneratedOnlyDirectory(dir, directoriesWithRemovedOutput.Contains(DirectoryKey(dir)));
+        return result;
     }
 
     private static IEnumerable<string> EnumerateFolders(string root)
@@ -875,6 +953,101 @@ public sealed class NfoGeneratorService : IHostedService
                 }
             }
         return removed;
+    }
+
+    /// <summary>
+    /// Deletes a directory only when it has no child directories and every
+    /// direct file is recognizable as plugin output. NFO ownership is verified
+    /// through the embedded marker; artwork is constrained to the exact
+    /// filenames produced by <see cref="SidecarWriter"/>. Empty directories
+    /// are eligible only when this sweep just removed plugin-owned output from
+    /// them, so unrelated empty directory structures are retained.
+    /// </summary>
+    private DirectoryCleanupResult TryDeleteGeneratedOnlyDirectory(string dir, bool deleteIfEmpty = false)
+    {
+        try
+        {
+            var directoryInfo = new DirectoryInfo(dir);
+            if (!directoryInfo.Exists || directoryInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || Directory.EnumerateDirectories(dir).Any())
+                return new();
+
+            var files = Directory.GetFiles(dir);
+            if (files.Length == 0 && !deleteIfEmpty)
+                return new();
+
+            foreach (var path in files)
+            {
+                if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint))
+                    return new();
+                if (!Path.GetExtension(path).Equals(".nfo", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!SidecarWriter.IsGeneratedSidecarName(path))
+                        return new();
+                    continue;
+                }
+
+                var ownership = ProbeOwnership(path);
+                if (ownership.Status == OwnershipProbe.Failed)
+                {
+                    _logger.LogWarning(ownership.Error, "Unable to inspect NFO ownership before generated-only folder cleanup: {Path}", path);
+                    return new();
+                }
+                if (ownership.Status != OwnershipProbe.Owned)
+                    return new();
+            }
+
+            int removed = 0;
+            foreach (var path in files)
+            {
+                var deletion = TryDelete(path);
+                if (deletion.Status == DeleteStatus.Deleted)
+                    removed++;
+                else if (deletion.Status == DeleteStatus.Failed)
+                {
+                    _logger.LogWarning(deletion.Error, "Unable to delete plugin output during generated-only folder cleanup: {Path}", path);
+                    return new(removed, 0);
+                }
+            }
+
+            try
+            {
+                Directory.Delete(dir, recursive: false);
+                return new(removed, 1);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return new(removed, 0);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Unable to delete generated-only folder {Folder}", dir);
+                return new(removed, 0);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unable to delete generated-only folder {Folder}", dir);
+                return new(removed, 0);
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new();
+        }
+        catch (FileNotFoundException)
+        {
+            return new();
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Unable to inspect folder for generated-only cleanup: {Folder}", dir);
+            return new();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unable to inspect folder for generated-only cleanup: {Folder}", dir);
+            return new();
+        }
     }
 
     private bool FolderHasAvailableVideoFiles(string folder)
@@ -1317,4 +1490,10 @@ public sealed class NfoGeneratorService : IHostedService
 
     private static int? PositiveVotes(int votes)
         => votes > 0 ? votes : null;
+
+    private readonly record struct DirectoryCleanupResult(int Files = 0, int Directories = 0)
+    {
+        public static DirectoryCleanupResult operator +(DirectoryCleanupResult left, DirectoryCleanupResult right)
+            => new(left.Files + right.Files, left.Directories + right.Directories);
+    }
 }
