@@ -104,6 +104,34 @@
     "image_url": null,
     "releases": [
       {
+        "version": "0.1.13",
+        "tag": "nfo-generator/v0.1.13",
+        "source_revision": "871256ae99cecf08fb7e379fa3bb9093fd48b2cc",
+        "released_at": "2026-08-29T08:38:30Z",
+        "channel": "Stable",
+        "release_notes": "## What's changed\n\n- **Orphan directory cleanup**: Relocation and delete cleanup now walk the old path toward its import root and remove generated-only subfolders. Import-folder and library runs scan managed-folder descendants and remove directories containing only plugin-owned NFOs or recognized artwork (`poster.*`, `fanart.*`, `banner.*`, `logo.*`, `disc.*`, `thumb.*`, `thumb-{fileId}.*`).\n- Import roots (including nested roots), folders with foreign files, and unrelated empty directories are always preserved. User-authored NFOs are never removed.",
+        "archives": [
+          {
+            "runtime": "linux-arm64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.13/NfoGenerator-v0.1.13_linux-arm64.zip",
+            "checksum": "969a97c1bc6028e6ac7ebdfee88aea10ee1d4ac73f20e5f089b7088e15c2e6bb"
+          },
+          {
+            "runtime": "linux-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.13/NfoGenerator-v0.1.13_linux-x64.zip",
+            "checksum": "0106b03108fa764df5bf8d093e4996ac91f6d574e02060a5d72e00150070addb"
+          },
+          {
+            "runtime": "win-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.13/NfoGenerator-v0.1.13_win-x64.zip",
+            "checksum": "39e4797319882e7d01d6258568ef8bb89a0b5a208e7d2964f470c44ba4f59bee"
+          }
+        ]
+      },
+      {
         "version": "0.1.12",
         "tag": "nfo-generator/v0.1.12",
         "source_revision": "51b24f9fa3e66c467b9fb388376823db1b23948f",
