@@ -104,6 +104,34 @@
     "image_url": null,
     "releases": [
       {
+        "version": "0.1.14",
+        "tag": "nfo-generator/v0.1.14",
+        "source_revision": "898830833c8b6f43b64df2834d3ec3fc00d175a8",
+        "released_at": "2026-08-29T12:43:40Z",
+        "channel": "Stable",
+        "release_notes": "## Changes\n\n- Move full-library cleanup into a dedicated, visible QueueProcessor phase with one resumable step per import folder.\n- Replace per-directory Shoko lookups and recursive scans per TMDB show root with precomputed live-file and show-folder indices.\n- Enumerate each managed folder once, then process the snapshot bottom-up while preserving nested import roots and foreign content.\n- Add cleanup progress logging and regression checks that prevent per-directory Shoko queries from returning.\n\nThis fixes library jobs appearing stuck on the final series at 100% while cleanup was still running, and substantially reduces cleanup work on large libraries.",
+        "archives": [
+          {
+            "runtime": "linux-arm64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.14/NfoGenerator-v0.1.14_linux-arm64.zip",
+            "checksum": "7d46cc3e4ada50b471b33173ecf37635b8dcbca873bbc21a0b174c03b742647a"
+          },
+          {
+            "runtime": "linux-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.14/NfoGenerator-v0.1.14_linux-x64.zip",
+            "checksum": "4d7bce637826ae51a0d487c644eecd5a5b91bf94a3c0663b6af02a2c6582e4f9"
+          },
+          {
+            "runtime": "win-x64",
+            "abstraction": "6.0.0",
+            "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.14/NfoGenerator-v0.1.14_win-x64.zip",
+            "checksum": "d7641dce5273e0b7c7b90f8f19d79a908a63c7e520439752af92290a92550817"
+          }
+        ]
+      },
+      {
         "version": "0.1.13",
         "tag": "nfo-generator/v0.1.13",
         "source_revision": "871256ae99cecf08fb7e379fa3bb9093fd48b2cc",
