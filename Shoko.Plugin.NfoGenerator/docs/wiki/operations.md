@@ -11,9 +11,10 @@ QueueProcessor can resume persisted jobs before Shoko's repositories are ready a
 1. Build an in-memory index of series, available files, show roots, and shared folder contents.
 2. Process one series per queue job.
 3. Schedule the next cursor with `RunAfterCurrent`.
-4. After the final series, sweep stale plugin-owned sidecars and generated-only orphan directories.
+4. After the final series, schedule the visible `LibraryCleanup` queue phase.
+5. Process one import folder per cleanup job using one indexed, bottom-up filesystem pass.
 
-The first job displays `Preparing library index (1/0, 0%)`. It changes to a real `x/y` value only after the index is complete. On a large active server, index construction can be CPU-heavy and competes with hashing/relocation work. The cursor survives a restart; the in-memory index is rebuilt before continuing.
+The first job displays `Preparing library index (1/0, 0%)`. It changes to a real `x/y` value only after the index is complete. After the final series, the WebUI changes from `Library: ... (100%)` to `Library cleanup: <import folder>`. On a large active server, index construction can be CPU-heavy and competes with hashing/relocation work. Both series and cleanup cursors survive a restart; the in-memory index is rebuilt before continuing a resumed cleanup.
 
 ## Diagnose a slow run
 

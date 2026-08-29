@@ -10,7 +10,7 @@ Shoko event or API trigger
   -> NFO/art sidecars beside managed media
 ```
 
-`NfoGeneratorService` owns event subscriptions and generation/cleanup rules. `NfoGenerationJob` is the durable queue boundary: its key members define deduplication, and it waits for `ISystemService.WaitForStartupAsync()` before touching Shoko services. The controller only queues work; it does not generate in the HTTP request.
+`NfoGeneratorService` owns event subscriptions and generation/cleanup rules. `NfoGenerationJob` is the durable queue boundary: its key members define deduplication, and it waits for `ISystemService.WaitForStartupAsync()` before touching Shoko services. Full-library generation uses one persisted job per series followed by a visible `LibraryCleanup` phase with one persisted job per managed folder. The controller only queues work; it does not generate in the HTTP request.
 
 ## Output ownership
 
@@ -19,6 +19,7 @@ Shoko event or API trigger
 - Folder-level output is written only when all direct live video files belong to one series. Mixed folders receive per-file sidecars only.
 - Plugin cleanup identifies its own NFOs through embedded Shoko identity data; user-authored NFOs must be left untouched.
 - Relocation/delete cleanup walks the old path toward its managed import root. Import-folder and library jobs additionally scan all descendants bottom-up and remove only directories whose entire contents match plugin-owned NFOs or known artwork output names; all configured import roots and folders with foreign content are preserved.
+- Library cleanup derives live NFO paths, descendant/direct video counts, and misplaced show-NFO targets from one in-memory index. It snapshots each managed folder once, skips nested managed roots, and processes that snapshot bottom-up without a Shoko lookup per filesystem directory.
 
 See [NFO format](../NFO-FORMAT.md) for emitted XML and filenames.
 

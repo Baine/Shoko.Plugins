@@ -303,6 +303,7 @@ internal static class NfoCleanupCheck
             Proxy<IManagedFolder>(method => method.Name == "get_Path" ? managedRoot : null),
             Proxy<IManagedFolder>(method => method.Name == "get_Path" ? nestedManagedRoot : null),
         ];
+        proxy.AbsolutePathCalls = 0;
         int removed = (int)typeof(NfoGeneratorService)
             .GetMethod("SweepLibrary", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(service, null)!;
@@ -323,6 +324,7 @@ internal static class NfoCleanupCheck
         AssertEqual(true, SidecarWriter.IsGeneratedSidecarName("poster.jpg"), "poster sidecar was not recognized");
         AssertEqual(true, SidecarWriter.IsGeneratedSidecarName("thumb-42.webp"), "file-id thumb sidecar was not recognized");
         AssertEqual(false, SidecarWriter.IsGeneratedSidecarName("poster.backup.jpg"), "foreign poster filename was recognized as plugin output");
+        AssertEqual(0, proxy.AbsolutePathCalls, "indexed library cleanup queried Shoko once per directory");
         proxy.ManagedFolders = [];
     }
 
@@ -481,6 +483,7 @@ internal static class NfoCleanupCheck
     {
         public IReadOnlyList<IVideoFile> Files { get; set; } = [];
         public IReadOnlyList<IManagedFolder> ManagedFolders { get; set; } = [];
+        public int AbsolutePathCalls { get; set; }
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
@@ -490,6 +493,7 @@ internal static class NfoCleanupCheck
                 return ManagedFolders;
             if (targetMethod?.Name == "GetVideoFilesByAbsolutePath")
             {
+                AbsolutePathCalls++;
                 var folder = (string)args![0]!;
                 return Files.Where(f => Path.GetDirectoryName(f.Path) is { } fileFolder && IsWithin(fileFolder, folder)).ToList();
             }
@@ -603,7 +607,35 @@ internal static class GenerationCheck
         AssertExists(Path.Combine(libraryA, "Unmapped B", "tvshow.nfo"), "unmapped series B shared the managed-folder scope");
 
         RetryFailedRootWrite(service, outputDir, canonical);
+        CheckIndexedLibraryCleanup(configurationService, outputDir);
         Console.WriteLine("OK generation state");
+    }
+
+    private static void CheckIndexedLibraryCleanup(IConfigurationService configurationService, string outputDir)
+    {
+        var managedRoot = Path.Combine(outputDir, "indexed-cleanup");
+        var showRoot = Path.Combine(managedRoot, "Show");
+        var season = Path.Combine(showRoot, "Season 1");
+        var series = CreateSeries(50, "Indexed Cleanup", "Cleanup plot", 777);
+        var entry = CreateEntry(Path.Combine(season, "episode.mkv"), 901, series, 15);
+        File.WriteAllText(entry.File.Path, "video");
+        WritePluginShow(Path.Combine(showRoot, "tvshow.nfo"));
+        WritePluginShow(Path.Combine(season, "tvshow.nfo"));
+
+        var videoService = DispatchProxy.Create<IVideoService, GenerationVideoServiceProxy>();
+        var videoProxy = (GenerationVideoServiceProxy)(object)videoService;
+        videoProxy.Files = [entry.File];
+        videoProxy.ManagedFolders = [ManagedFolder(managedRoot)];
+        var metadataService = Proxy<IMetadataService>(method => method.Name == "GetAllShokoSeries" ? new[] { series } : Default(method));
+        var settings = new ConfigurationProvider<NfoGeneratorSettings>(configurationService);
+        var service = new NfoGeneratorService(null!, settings, metadataService, videoService, null!, NullLogger<NfoGeneratorService>.Instance);
+
+        videoProxy.AbsolutePathCalls = 0;
+        var result = service.CleanupLibraryStep(0);
+        AssertEqual(null, result.NextFolderIndex, "single-folder indexed cleanup scheduled an extra step");
+        AssertMissing(Path.Combine(season, "tvshow.nfo"), "indexed cleanup retained a misplaced show NFO");
+        AssertExists(Path.Combine(showRoot, "tvshow.nfo"), "indexed cleanup removed the resolved show-root NFO");
+        AssertEqual(0, videoProxy.AbsolutePathCalls, "indexed misplaced cleanup queried Shoko once per directory");
     }
 
     private static void CheckDirectSharingBurst(NfoGeneratorService service, object videoProxy, string root, IShokoSeries other, IShokoSeries canonical)

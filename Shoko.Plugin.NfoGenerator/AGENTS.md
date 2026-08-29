@@ -29,7 +29,7 @@ serialization/compare logic.
 - **Config**: `Config/NfoGeneratorSettings.cs` is a public `IConfiguration` POCO
   (auto-surfaced in the WebUI). Read via `ConfigurationProvider<NfoGeneratorSettings>`
   in `NfoGeneratorServiceRegistration.cs`.
-- **Triggers**: `Controllers/NfoGeneratorController.cs` — `POST /api/plugin/NfoGenerator/{series|episode|folder|library}`, `[Authorize(Policy = "admin")]`. The `folder` and `library` triggers regenerate content-stale NFOs, then run their scoped orphan sweeps.
+- **Triggers**: `Controllers/NfoGeneratorController.cs` — `POST /api/plugin/NfoGenerator/{series|episode|folder|library}`, `[Authorize(Policy = "admin")]`. The `folder` and `library` triggers regenerate content-stale NFOs, then run their scoped orphan sweeps. Full-library cleanup is a distinct `LibraryCleanup` queue phase with one persisted step per managed folder, so the final series no longer appears stuck at 100%.
 - **WebUI page**: `NfoGeneratorPlugin.GetPages()` exposes a "Settings" page at
   `GET /api/plugin/NfoGenerator/settings` (anonymous, scaffolding only). The WebUI
   embeds it as an iframe under Settings → Plugins. Its JS reads the user's apikey
@@ -108,6 +108,12 @@ serialization/compare logic.
   `thumb.*`). Any foreign file or user NFO protects the directory; all managed
   import roots (including nested roots) and unrelated empty directories are
   retained.
+- **Cleanup performance invariant**: full-library preparation builds live-NFO,
+  descendant-video, direct-show, and managed-root indices once. Each managed
+  folder is then enumerated once and processed bottom-up from that snapshot.
+  Do not reintroduce `GetVideoFilesByAbsolutePath` per directory or recursive
+  filesystem enumeration per TMDB show root; both caused the queue to sit on
+  the final series at 100% for a long time on large libraries.
 - **Shared-folder guard**: folder-level NFOs and art are only written when every
   live file directly in the folder belongs to the same series. Mixed-series
   folders get per-file `episode.nfo` only, so one series' metadata cannot

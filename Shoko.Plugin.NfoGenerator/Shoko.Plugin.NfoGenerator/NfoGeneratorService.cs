@@ -137,8 +137,12 @@ public sealed class NfoGeneratorService : IHostedService
         int written = GenerateForFiles(files, force);
         try
         {
-            var managedRoots = ManagedRootKeys(_videoService.GetAllManagedFolders().Append(folder));
-            var cleanup = SweepManagedFolder(folder, IndexAvailableFiles(_videoService.GetAllVideoFiles()), managedRoots);
+            var managedFolders = _videoService.GetAllManagedFolders()
+                .Append(folder)
+                .DistinctBy(managed => DirectoryKey(managed.Path), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var cleanupIndex = BuildCleanupFileIndex(managedFolders, files);
+            var cleanup = SweepManagedFolder(folder, cleanupIndex, EmptyPathSet);
             _logger.LogInformation(
                 "Import folder sweep finished: {Removed} orphan plugin file(s) and {Directories} generated-only folder(s) removed from {Folder}",
                 cleanup.Files, cleanup.Directories, folder.Path);
@@ -157,7 +161,7 @@ public sealed class NfoGeneratorService : IHostedService
     /// <summary>Generates one library series and returns the next persisted cursor, if any.</summary>
     internal LibraryStepResult GenerateLibraryStep(int seriesIndex, bool force = false)
     {
-        var run = _libraryRun ?? CreateLibraryRun();
+        var run = _libraryRun ?? CreateLibraryRun(forGeneration: true);
         if (seriesIndex < run.Series.Count)
         {
             var series = run.Series[seriesIndex];
@@ -166,18 +170,62 @@ public sealed class NfoGeneratorService : IHostedService
             if (seriesIndex + 1 < run.Series.Count)
             {
                 var next = run.Series[seriesIndex + 1];
-                return new(seriesIndex + 1, run.Series.Count, LanguageResolver.Title(next, run.TitleLanguage));
+                return new(seriesIndex + 1, run.Series.Count, LanguageResolver.Title(next, run.TitleLanguage), false, run.Index.ManagedFolders.Count, null);
             }
         }
-        SweepMisplacedShowNfos(run.Pass);
-        _logger.LogInformation("Library generation finished: {Written} NFO file(s) written", run.Written);
-        int removed = SweepLibrary();
-        _logger.LogInformation("Library generation finished: {Removed} orphan plugin file(s) removed", removed);
-        _libraryRun = null;
-        return new(null, run.Series.Count, null);
+        _logger.LogInformation("Library content generation finished: {Written} NFO file(s) written; scheduling cleanup", run.Written);
+        return new(null, run.Series.Count, null, true, run.Index.ManagedFolders.Count, run.Index.ManagedFolders.FirstOrDefault()?.Path);
     }
 
-    private LibraryRunState CreateLibraryRun()
+    /// <summary>Runs one managed-folder cleanup step and returns the next persisted cursor, if any.</summary>
+    internal LibraryCleanupStepResult CleanupLibraryStep(int folderIndex)
+    {
+        var run = _libraryRun ?? CreateLibraryRun(forGeneration: false);
+        if (!run.CleanupPrepared)
+        {
+            run.MisplacedShowNfoPaths.UnionWith(BuildMisplacedShowNfoTargets(run.Pass, run.Index));
+            run.CleanupPrepared = true;
+            _logger.LogInformation(
+                "Starting indexed library cleanup across {FolderCount} import folder(s); {MisplacedCount} misplaced show NFO candidate(s)",
+                run.Index.ManagedFolders.Count, run.MisplacedShowNfoPaths.Count);
+        }
+
+        if (folderIndex < run.Index.ManagedFolders.Count)
+        {
+            var managedFolder = run.Index.ManagedFolders[folderIndex];
+            _logger.LogInformation(
+                "Cleaning import folder {Index}/{Total}: {Folder}",
+                folderIndex + 1, run.Index.ManagedFolders.Count, managedFolder.Path);
+            try
+            {
+                var cleanup = SweepManagedFolder(managedFolder, run.Index.Cleanup, run.MisplacedShowNfoPaths);
+                run.RemovedFiles += cleanup.Files;
+                run.RemovedDirectories += cleanup.Directories;
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Unable to sweep managed folder {Folder}", managedFolder.Path);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unable to sweep managed folder {Folder}", managedFolder.Path);
+            }
+
+            if (folderIndex + 1 < run.Index.ManagedFolders.Count)
+            {
+                var next = run.Index.ManagedFolders[folderIndex + 1];
+                return new(folderIndex + 1, run.Index.ManagedFolders.Count, next.Path);
+            }
+        }
+
+        _logger.LogInformation(
+            "Library cleanup finished: {Removed} orphan plugin file(s) and {Directories} generated-only folder(s) removed",
+            run.RemovedFiles, run.RemovedDirectories);
+        _libraryRun = null;
+        return new(null, run.Index.ManagedFolders.Count, null);
+    }
+
+    private LibraryRunState CreateLibraryRun(bool forGeneration)
     {
         var series = _metadataService.GetAllShokoSeries().ToList();
         _logger.LogInformation("Building library NFO index for {Count} series", series.Count);
@@ -185,7 +233,10 @@ public sealed class NfoGeneratorService : IHostedService
         var pass = new GenerationPass(useBurstCache: false);
         var index = BuildLibraryIndex(series, pass);
         _logger.LogInformation("Library NFO index built in {Elapsed}", System.Diagnostics.Stopwatch.GetElapsedTime(started));
-        _logger.LogInformation("Generating NFO files for the entire library: {Count} series", series.Count);
+        if (forGeneration)
+            _logger.LogInformation("Generating NFO files for the entire library: {Count} series", series.Count);
+        else
+            _logger.LogInformation("Rebuilt library index to resume the cleanup phase");
         return _libraryRun = new LibraryRunState(series, index, _settings.Load().TitleLanguage, pass);
     }
 
@@ -320,7 +371,8 @@ public sealed class NfoGeneratorService : IHostedService
         var showPath = Path.Combine(showFolder, "tvshow.nfo");
         var showResult = NfoWriter.WriteTvShowDetailed(showPath, BuildShowNfo(canonicalSeries, null, SidecarWriter.WriteFolderArt(showFolder, canonicalSeries, LogSidecarFailure), cfg, showId), force);
         ThrowOnNfoWriteFailure(showPath, showResult);
-        pass.WrittenShowRoots.Add(scope);
+        if (showResult.Status != NfoWriter.NfoWriteStatus.Unowned)
+            pass.WrittenShowRoots.Add(scope);
         timing?.Lap("RootIO");
         return episodeWritten || showResult.Status == NfoWriter.NfoWriteStatus.Written;
     }
@@ -785,6 +837,7 @@ public sealed class NfoGeneratorService : IHostedService
     }
 
     private static readonly string[] FolderNfos = ["tvshow.nfo", "movie.nfo"];
+    private static readonly HashSet<string> EmptyPathSet = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Removes stale plugin output at the old path and walks towards the owning
@@ -839,15 +892,16 @@ public sealed class NfoGeneratorService : IHostedService
     /// </summary>
     private int SweepLibrary()
     {
-        var filesByDir = IndexAvailableFiles(_videoService.GetAllVideoFiles());
-        var managedFolders = _videoService.GetAllManagedFolders().ToList();
-        var managedRoots = ManagedRootKeys(managedFolders);
+        var managedFolders = _videoService.GetAllManagedFolders()
+            .DistinctBy(folder => DirectoryKey(folder.Path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var cleanupIndex = BuildCleanupFileIndex(managedFolders, _videoService.GetAllVideoFiles());
         var total = new DirectoryCleanupResult();
         foreach (var managedFolder in managedFolders)
         {
             try
             {
-                total += SweepManagedFolder(managedFolder, filesByDir, managedRoots);
+                total += SweepManagedFolder(managedFolder, cleanupIndex, EmptyPathSet);
             }
             catch (IOException ex)
             {
@@ -864,45 +918,286 @@ public sealed class NfoGeneratorService : IHostedService
         return total.Files;
     }
 
-    private static Dictionary<string, List<string>> IndexAvailableFiles(IEnumerable<IVideoFile> files)
-        => files
-            .Where(f => f.IsAvailable)
-            .GroupBy(f => Path.GetDirectoryName(f.Path) ?? "", StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Select(f => f.Path).ToList(), StringComparer.OrdinalIgnoreCase);
-
     private static HashSet<string> ManagedRootKeys(IEnumerable<IManagedFolder> managedFolders)
         => managedFolders.Select(folder => DirectoryKey(folder.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    private CleanupFileIndex BuildCleanupFileIndex(IReadOnlyList<IManagedFolder> managedFolders, IEnumerable<IVideoFile> files)
+    {
+        var rootsBySpecificity = managedFolders.OrderByDescending(folder => folder.Path.Length).ToList();
+        var folderContents = new Dictionary<string, FolderContents>(StringComparer.OrdinalIgnoreCase);
+        var liveNfoPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files
+            .Where(file => file.IsAvailable && Path.GetDirectoryName(file.Path) is not null)
+            .DistinctBy(file => DirectoryKey(file.Path), StringComparer.OrdinalIgnoreCase))
+        {
+            var directory = Path.GetDirectoryName(file.Path)!;
+            var managedFolder = rootsBySpecificity.FirstOrDefault(folder => IsPathWithin(directory, folder.Path));
+            if (managedFolder is null)
+                continue;
+
+            liveNfoPaths.Add(DirectoryKey(Path.ChangeExtension(file.Path, ".nfo")));
+            var showId = ResolveTmdbShowId(file);
+            bool direct = true;
+            for (var current = directory; current is not null; current = Path.GetDirectoryName(current))
+            {
+                var key = DirectoryKey(current);
+                if (!folderContents.TryGetValue(key, out var contents))
+                    folderContents[key] = contents = new FolderContents();
+                contents.FileCount++;
+                if (showId is not null)
+                    contents.ShowFileCounts[showId.Value] = contents.ShowFileCounts.GetValueOrDefault(showId.Value) + 1;
+                if (direct)
+                {
+                    contents.DirectFileCount++;
+                    if (showId is not null)
+                        contents.DirectShowFileCounts[showId.Value] = contents.DirectShowFileCounts.GetValueOrDefault(showId.Value) + 1;
+                    direct = false;
+                }
+                if (PathsEqual(current, managedFolder.Path))
+                    break;
+            }
+        }
+        return new(managedFolders, ManagedRootKeys(managedFolders), folderContents, liveNfoPaths);
+    }
+
     private DirectoryCleanupResult SweepManagedFolder(
         IManagedFolder managedFolder,
-        IReadOnlyDictionary<string, List<string>> filesByDir,
-        IReadOnlySet<string> managedRoots)
+        CleanupFileIndex cleanupIndex,
+        IReadOnlySet<string> misplacedShowNfoPaths)
     {
-        var directories = EnumerateFolders(managedFolder.Path).ToList();
-        int removedFiles = 0;
-        var directoriesWithRemovedOutput = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var dir in directories)
+        var directories = SnapshotManagedFolder(managedFolder.Path, cleanupIndex.ManagedRoots);
+        var deletedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new DirectoryCleanupResult();
+        int processed = 0;
+        for (int i = directories.Count - 1; i >= 0; i--)
         {
-            filesByDir.TryGetValue(dir, out var live);
-            int removedInDirectory = SweepDirectory(dir, live);
-            removedFiles += removedInDirectory;
-            if (removedInDirectory > 0)
-                directoriesWithRemovedOutput.Add(DirectoryKey(dir));
+            var cleanup = SweepDirectorySnapshot(directories[i], cleanupIndex, misplacedShowNfoPaths, deletedDirectories);
+            result += cleanup;
+            if (cleanup.Directories > 0)
+                deletedDirectories.Add(DirectoryKey(directories[i].Path));
+            processed++;
+            if (processed % 1000 == 0)
+                _logger.LogInformation(
+                    "Library cleanup progress for {Folder}: {Processed}/{Total} directories processed",
+                    managedFolder.Path, processed, directories.Count);
         }
-
-        var result = new DirectoryCleanupResult(removedFiles, 0);
-        foreach (var dir in directories
-            .Where(dir => !managedRoots.Contains(DirectoryKey(dir)))
-            .OrderByDescending(dir => dir.Length))
-            result += TryDeleteGeneratedOnlyDirectory(dir, directoriesWithRemovedOutput.Contains(DirectoryKey(dir)));
         return result;
     }
 
-    private static IEnumerable<string> EnumerateFolders(string root)
+    private List<DirectorySnapshot> SnapshotManagedFolder(string root, IReadOnlySet<string> managedRoots)
     {
-        yield return root;
-        foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
-            yield return dir;
+        var snapshots = new List<DirectorySnapshot>();
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.TryPop(out var directory))
+        {
+            FileAttributes directoryAttributes;
+            try
+            {
+                directoryAttributes = File.GetAttributes(directory);
+            }
+            catch (FileNotFoundException)
+            {
+                continue;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                continue;
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Unable to inspect directory during library cleanup: {Folder}", directory);
+                continue;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unable to inspect directory during library cleanup: {Folder}", directory);
+                continue;
+            }
+
+            var files = new List<FileSnapshot>();
+            var childDirectories = new List<string>();
+            bool inspectionComplete = !directoryAttributes.HasFlag(FileAttributes.ReparsePoint);
+            if (inspectionComplete)
+            {
+                FileSystemInfo[] entries;
+                try
+                {
+                    entries = new DirectoryInfo(directory).GetFileSystemInfos();
+                }
+                catch (IOException ex)
+                {
+                    _logger.LogWarning(ex, "Unable to enumerate directory during library cleanup: {Folder}", directory);
+                    entries = [];
+                    inspectionComplete = false;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    _logger.LogWarning(ex, "Unable to enumerate directory during library cleanup: {Folder}", directory);
+                    entries = [];
+                    inspectionComplete = false;
+                }
+
+                foreach (var entry in entries)
+                {
+                    FileAttributes attributes;
+                    try
+                    {
+                        attributes = entry.Attributes;
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        continue;
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        continue;
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogWarning(ex, "Unable to inspect entry during library cleanup: {Path}", entry.FullName);
+                        inspectionComplete = false;
+                        continue;
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        _logger.LogWarning(ex, "Unable to inspect entry during library cleanup: {Path}", entry.FullName);
+                        inspectionComplete = false;
+                        continue;
+                    }
+
+                    if (attributes.HasFlag(FileAttributes.Directory))
+                    {
+                        childDirectories.Add(entry.FullName);
+                        if (!attributes.HasFlag(FileAttributes.ReparsePoint)
+                            && !managedRoots.Contains(DirectoryKey(entry.FullName)))
+                            pending.Push(entry.FullName);
+                    }
+                    else
+                    {
+                        files.Add(new(entry.FullName, attributes));
+                    }
+                }
+            }
+
+            snapshots.Add(new(directory, directoryAttributes, files, childDirectories, inspectionComplete));
+            if (snapshots.Count % 1000 == 0)
+                _logger.LogInformation("Library cleanup scan progress for {Root}: {Count} directories indexed", root, snapshots.Count);
+        }
+        return snapshots;
+    }
+
+    private DirectoryCleanupResult SweepDirectorySnapshot(
+        DirectorySnapshot directory,
+        CleanupFileIndex cleanupIndex,
+        IReadOnlySet<string> misplacedShowNfoPaths,
+        IReadOnlySet<string> deletedDirectories)
+    {
+        var directoryKey = DirectoryKey(directory.Path);
+        bool hasAvailableVideo = cleanupIndex.FolderContents.GetValueOrDefault(directoryKey)?.FileCount > 0;
+        var remaining = new List<FileSnapshot>(directory.Files.Count);
+        int removed = 0;
+        bool cleanupBlocked = !directory.InspectionComplete;
+
+        foreach (var file in directory.Files)
+        {
+            if (file.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || !Path.GetExtension(file.Path).Equals(".nfo", StringComparison.OrdinalIgnoreCase))
+            {
+                remaining.Add(file);
+                continue;
+            }
+
+            var pathKey = DirectoryKey(file.Path);
+            bool misplaced = misplacedShowNfoPaths.Contains(pathKey);
+            bool folderNfo = FolderNfos.Contains(Path.GetFileName(file.Path), StringComparer.OrdinalIgnoreCase);
+            if (!misplaced && (cleanupIndex.LiveNfoPaths.Contains(pathKey) || (folderNfo && hasAvailableVideo)))
+            {
+                remaining.Add(file);
+                continue;
+            }
+
+            var ownership = ProbeOwnership(file.Path);
+            if (ownership.Status == OwnershipProbe.Failed)
+            {
+                _logger.LogWarning(ownership.Error, "Unable to inspect NFO ownership during library cleanup: {Path}", file.Path);
+                remaining.Add(file);
+                cleanupBlocked = true;
+            }
+            else if (ownership.Status == OwnershipProbe.Owned)
+            {
+                var deletion = TryDelete(file.Path);
+                if (deletion.Status == DeleteStatus.Deleted)
+                    removed++;
+                else if (deletion.Status == DeleteStatus.Failed)
+                {
+                    _logger.LogWarning(deletion.Error, "Unable to delete plugin-owned NFO during library cleanup: {Path}", file.Path);
+                    remaining.Add(file);
+                    cleanupBlocked = true;
+                }
+            }
+            else
+            {
+                remaining.Add(file);
+            }
+        }
+
+        bool hasRemainingChild = directory.ChildDirectories.Any(child => !deletedDirectories.Contains(DirectoryKey(child)));
+        if (cleanupBlocked || cleanupIndex.ManagedRoots.Contains(directoryKey)
+            || directory.Attributes.HasFlag(FileAttributes.ReparsePoint) || hasRemainingChild)
+            return new(removed, 0);
+        if (remaining.Count == 0 && removed == 0)
+            return new();
+
+        foreach (var file in remaining)
+        {
+            if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                return new(removed, 0);
+            if (!Path.GetExtension(file.Path).Equals(".nfo", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!SidecarWriter.IsGeneratedSidecarName(file.Path))
+                    return new(removed, 0);
+                continue;
+            }
+
+            var ownership = ProbeOwnership(file.Path);
+            if (ownership.Status == OwnershipProbe.Failed)
+                _logger.LogWarning(ownership.Error, "Unable to inspect NFO ownership before generated-only folder cleanup: {Path}", file.Path);
+            if (ownership.Status != OwnershipProbe.Owned)
+                return new(removed, 0);
+        }
+
+        foreach (var file in remaining)
+        {
+            var deletion = TryDelete(file.Path);
+            if (deletion.Status == DeleteStatus.Deleted)
+                removed++;
+            else if (deletion.Status == DeleteStatus.Failed)
+            {
+                _logger.LogWarning(deletion.Error, "Unable to delete plugin output during generated-only folder cleanup: {Path}", file.Path);
+                return new(removed, 0);
+            }
+        }
+
+        try
+        {
+            Directory.Delete(directory.Path, recursive: false);
+            return new(removed, 1);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(removed, 0);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Unable to delete generated-only folder {Folder}", directory.Path);
+            return new(removed, 0);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unable to delete generated-only folder {Folder}", directory.Path);
+            return new(removed, 0);
+        }
     }
 
     private int SweepDirectory(string dir, IReadOnlyList<string>? liveVideoPaths)
@@ -1116,10 +1411,12 @@ public sealed class NfoGeneratorService : IHostedService
 
     private LibraryIndex BuildLibraryIndex(IReadOnlyList<IShokoSeries> seriesList, GenerationPass pass)
     {
-        var managedFolders = _videoService.GetAllManagedFolders().ToList();
+        var managedFolders = _videoService.GetAllManagedFolders()
+            .DistinctBy(folder => DirectoryKey(folder.Path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var cleanup = BuildCleanupFileIndex(managedFolders, _videoService.GetAllVideoFiles());
         var showFolders = new Dictionary<ShowScope, List<string>>();
-        var folderContents = new Dictionary<string, FolderContents>(StringComparer.OrdinalIgnoreCase);
-        var index = new LibraryIndex(managedFolders, showFolders, folderContents);
+        var index = new LibraryIndex(managedFolders, showFolders, cleanup);
         foreach (var file in seriesList.SelectMany(s => s.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList).SelectMany(v => v.Files)))
         {
             if (!file.IsAvailable || Path.GetDirectoryName(file.Path) is null || file.Video is null)
@@ -1139,28 +1436,13 @@ public sealed class NfoGeneratorService : IHostedService
             destinations.Add(Path.GetDirectoryName(file.Path)!);
         }
 
-        foreach (var file in _videoService.GetAllVideoFiles().Where(f => f.IsAvailable))
+        foreach (var folders in showFolders.Values)
         {
-            var directory = Path.GetDirectoryName(file.Path);
-            if (directory is null)
-                continue;
-            var managedFolder = managedFolders.Where(f => IsPathWithin(directory, f.Path)).OrderByDescending(f => f.Path.Length).FirstOrDefault();
-            if (managedFolder is null)
-                continue;
-            var showId = ResolveTmdbShowId(file);
-            for (var current = directory; current is not null; current = Path.GetDirectoryName(current))
-            {
-                var key = DirectoryKey(current);
-                if (!folderContents.TryGetValue(key, out var contents))
-                    folderContents[key] = contents = new FolderContents();
-                contents.FileCount++;
-                if (showId is not null)
-                    contents.ShowFileCounts[showId.Value] = contents.ShowFileCounts.GetValueOrDefault(showId.Value) + 1;
-                if (PathsEqual(current, managedFolder.Path))
-                    break;
-            }
+            var distinct = folders.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            folders.Clear();
+            folders.AddRange(distinct);
         }
-        _logger.LogInformation("Indexed {ShowCount} TMDB show(s) and {FolderCount} media folder(s) for library generation", showFolders.Count, folderContents.Count);
+        _logger.LogInformation("Indexed {ShowCount} TMDB show(s) and {FolderCount} media folder(s) for library generation", showFolders.Count, cleanup.FolderContents.Count);
         return index;
     }
 
@@ -1212,7 +1494,19 @@ public sealed class NfoGeneratorService : IHostedService
         public Dictionary<SweepKey, long> CompletedMisplacedSweeps { get; } = [];
     }
 
-    private sealed record LibraryIndex(IReadOnlyList<IManagedFolder> ManagedFolders, Dictionary<ShowScope, List<string>> ShowFolders, Dictionary<string, FolderContents> FolderContents);
+    private sealed record CleanupFileIndex(
+        IReadOnlyList<IManagedFolder> ManagedFolders,
+        HashSet<string> ManagedRoots,
+        Dictionary<string, FolderContents> FolderContents,
+        HashSet<string> LiveNfoPaths);
+
+    private sealed record LibraryIndex(
+        IReadOnlyList<IManagedFolder> ManagedFolders,
+        Dictionary<ShowScope, List<string>> ShowFolders,
+        CleanupFileIndex Cleanup)
+    {
+        public Dictionary<string, FolderContents> FolderContents => Cleanup.FolderContents;
+    }
 
     private sealed class LibraryRunState(IReadOnlyList<IShokoSeries> series, LibraryIndex index, string titleLanguage, GenerationPass pass)
     {
@@ -1221,15 +1515,36 @@ public sealed class NfoGeneratorService : IHostedService
         public string TitleLanguage { get; } = titleLanguage;
         public GenerationPass Pass { get; } = pass;
         public int Written { get; set; }
+        public bool CleanupPrepared { get; set; }
+        public HashSet<string> MisplacedShowNfoPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int RemovedFiles { get; set; }
+        public int RemovedDirectories { get; set; }
     }
 
-    internal readonly record struct LibraryStepResult(int? NextSeriesIndex, int TotalSeries, string? NextSeriesTitle);
+    internal readonly record struct LibraryStepResult(
+        int? NextSeriesIndex,
+        int TotalSeries,
+        string? NextSeriesTitle,
+        bool CleanupPending,
+        int CleanupFolders,
+        string? FirstCleanupFolderPath);
+    internal readonly record struct LibraryCleanupStepResult(int? NextFolderIndex, int TotalFolders, string? NextFolderPath);
 
     private sealed class FolderContents
     {
         public int FileCount { get; set; }
         public Dictionary<int, int> ShowFileCounts { get; } = [];
+        public int DirectFileCount { get; set; }
+        public Dictionary<int, int> DirectShowFileCounts { get; } = [];
     }
+
+    private sealed record FileSnapshot(string Path, FileAttributes Attributes);
+    private sealed record DirectorySnapshot(
+        string Path,
+        FileAttributes Attributes,
+        IReadOnlyList<FileSnapshot> Files,
+        IReadOnlyList<string> ChildDirectories,
+        bool InspectionComplete);
 
     private sealed class RelocationTiming(ILogger logger)
     {
@@ -1275,6 +1590,52 @@ public sealed class NfoGeneratorService : IHostedService
                 "Relocated NFO generation timing: {TotalMs}ms; old-path cleanup {OldPathCleanupMs}ms; canonical resolution {CanonicalResolutionMs}ms; direct sharing {DirectSharingMs}ms; scope resolution {ScopeResolutionMs}ms (cache hits {ScopeCacheHits}, misses {ScopeCacheMisses}); episode I/O {EpisodeIoMs}ms; show sharing {ShowSharingMs}ms; root I/O {RootIoMs}ms; misplaced sweep {MisplacedSweepMs}ms (performed {MisplacedPerformed}, skipped {MisplacedSkipped}, failed {MisplacedFailed})",
                 total.TotalMilliseconds, Ms("OldPathCleanup"), Ms("CanonicalResolution"), Ms("DirectSharing"), Ms("ScopeResolution"), _scopeHits, _scopeMisses, Ms("EpisodeIO"), Ms("ShowSharing"), Ms("RootIO"), Ms("MisplacedSweep"), _misplacedPerformed, _misplacedSkipped, _misplacedFailed);
         }
+    }
+
+    /// <summary>
+    /// Builds exact misplaced-tvshow targets from the in-memory media index.
+    /// This replaces the former recursive filesystem walk for every show root
+    /// during full-library cleanup.
+    /// </summary>
+    private HashSet<string> BuildMisplacedShowNfoTargets(GenerationPass pass, LibraryIndex index)
+    {
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int processed = 0;
+        foreach (var (scope, linkedFolders) in index.ShowFolders)
+        {
+            processed++;
+            if (processed % 1000 == 0)
+                _logger.LogInformation(
+                    "Library cleanup preparation: {Processed}/{Total} TMDB show scopes indexed",
+                    processed, index.ShowFolders.Count);
+            if (linkedFolders.Count == 0)
+                continue;
+            var showFolder = pass.ShowFolders.GetValueOrDefault(scope)
+                ?? ResolveShowFolder(linkedFolders[0], scope.TmdbShowId, index, linkedFolders);
+            if (!pass.WrittenShowRoots.Contains(scope))
+            {
+                var rootStatus = ProbePluginShowNfo(Path.Combine(showFolder, "tvshow.nfo"), scope.TmdbShowId);
+                if (rootStatus.Status == OwnershipProbe.Failed)
+                {
+                    _logger.LogWarning(rootStatus.Error, "Unable to inspect resolved show-root NFO during indexed cleanup: {Path}", showFolder);
+                    continue;
+                }
+                if (rootStatus.Status != OwnershipProbe.Owned)
+                    continue;
+            }
+
+            foreach (var folder in linkedFolders)
+            {
+                if (PathsEqual(folder, showFolder) || !IsPathWithin(folder, showFolder))
+                    continue;
+                if (!index.FolderContents.TryGetValue(DirectoryKey(folder), out var contents)
+                    || contents.DirectFileCount == 0
+                    || contents.DirectShowFileCounts.GetValueOrDefault(scope.TmdbShowId) != contents.DirectFileCount)
+                    continue;
+                targets.Add(DirectoryKey(Path.Combine(folder, "tvshow.nfo")));
+            }
+        }
+        return targets;
     }
 
     /// <summary>
