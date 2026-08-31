@@ -1,0 +1,45 @@
+{
+  "id": "d346ad56-9ec6-47ca-a6dc-476b8d9fbab8",
+  "name": "TMDB Link Fixer",
+  "overview": "Checks existing TMDB movie and show links, compares possible replacements, and applies only replacements explicitly confirmed by an administrator.",
+  "authors": "Baine",
+  "repository_url": "https://github.com/Baine/Shoko.Plugins",
+  "homepage_url": null,
+  "tags": [
+    "tmdb",
+    "metadata",
+    "links",
+    "validation"
+  ],
+  "image_url": null,
+  "releases": [
+    {
+      "version": "0.1.0",
+      "tag": "tmdb-link-fixer/v0.1.0",
+      "source_revision": "825edf63e387546dc177ce84148721aad0ba7ccc",
+      "released_at": "2026-08-31T10:38:00Z",
+      "channel": "Stable",
+      "release_notes": "Initial release of the TMDB Link Fixer plugin.\n\n- Scans every TMDB movie and show link without modifying it.\n- Detects valid, missing (invalid), and redirected targets.\n- Suggests replacements via auto-match and manual search.\n- Shows posters on hover and a three-poster comparison before confirming.\n- Applies a replacement only after an explicit administrator confirmation. No automatic link changes.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.0/TmdbLinkFixer-v0.1.0_linux-arm64.zip",
+          "checksum": "d472501244a4de8b1a5f437a65a83f97502f0f6a9e782800cecd8471e266c2af"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.0/TmdbLinkFixer-v0.1.0_linux-x64.zip",
+          "checksum": "bea106e8f77f92c01722b2ef732b1d1ffb97f2a25d894d1666ddbcdc99d3dd2f"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.0/TmdbLinkFixer-v0.1.0_win-x64.zip",
+          "checksum": "4500079457ea4341f6ac2f4146e4f78af48a246b4164ded408363ecaf304fcb2"
+        }
+      ]
+    }
+  ]
+}

@@ -15,9 +15,18 @@ AniDB Watch History and Movie Missing Filter were created by AnimeNeko and are i
 
 ## Shoko manifests
 
-Add only the aggregate manifest in Shoko; it contains the released plugins:
+Add only the aggregate manifest in Shoko:
 
 `https://raw.githubusercontent.com/Baine/Shoko.Plugins/main/manifest.json`
+
+The aggregate is a list of `{id, type: "manifest", url}` refs, each pointing to a
+plugin's own manifest in `manifests/`. Each release updates only its plugin's
+manifest file, so the aggregate stays stable and maintenance is per-plugin:
+
+- `manifests/anidb-watch-history.json`
+- `manifests/movie-missing-filter.json`
+- `manifests/nfo-generator.json`
+- `manifests/tmdb-link-fixer.json`
 
 ## Build and verify
 

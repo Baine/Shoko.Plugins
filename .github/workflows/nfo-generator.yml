@@ -152,17 +152,16 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          MANIFEST='manifest.json'
+          MANIFEST='manifests/nfo-generator.json'
           PACKAGE_UUID='5c5482c1-3dd0-49cb-b862-d57e305da353'
           CSPROJ='Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj'
           TAG_VERSION="${TAG#nfo-generator/}"
           VERSION="${TAG_VERSION#v}"
 
-          MATCH_COUNT="$(jq --arg package_uuid "$PACKAGE_UUID" \
-            'if type == "array" then map(select(.id == $package_uuid)) | length else 0 end' \
-            "$MANIFEST")"
-          if [[ "$MATCH_COUNT" -ne 1 ]]; then
-            echo "Expected exactly one manifest entry for $PACKAGE_UUID, found $MATCH_COUNT" >&2
+          # The per-plugin manifest is a single package object; verify its id matches this plugin.
+          MANIFEST_ID="$(jq -r '.id' "$MANIFEST")"
+          if [[ "$MANIFEST_ID" != "$PACKAGE_UUID" ]]; then
+            echo "Manifest id $MANIFEST_ID does not match plugin id $PACKAGE_UUID" >&2
             exit 1
           fi
 
@@ -226,8 +225,8 @@ jobs:
             --argjson archives "$ARCHIVES_JSON" \
             '{version: $version, tag: $tag, source_revision: $source_revision, released_at: $released_at, channel: $channel, release_notes: $release_notes, archives: $archives}')"
 
-          jq --arg package_uuid "$PACKAGE_UUID" --argjson release "$RELEASE_ENTRY" \
-            'map(if .id == $package_uuid then .releases = [$release] + (.releases | map(select(.version != $release.version))) else . end)' \
+          jq --argjson release "$RELEASE_ENTRY" \
+            '.releases = [$release] + (.releases | map(select(.version != $release.version)))' \
             "$MANIFEST" > "$MANIFEST.tmp"
           mv "$MANIFEST.tmp" "$MANIFEST"
 

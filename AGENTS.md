@@ -27,10 +27,10 @@ dotnet run --project Shoko.Plugin.NfoGenerator/tools/NfoGenerator.SelfCheck/NfoG
 
 - `Shoko.Plugin.AniDBWatchHistory` defaults `ShokoServerRoot` to `../ShokoServer`; use `-p:ShokoServerRoot=...` (or the build script) for another checkout. Rebuild it against the exact Shoko Daily version it will run with.
 - `Shoko.Plugin.MovieMissingFilter/build.sh` produces the installable contents in `dist/`; use `build-docker.sh` when a local .NET 10 SDK is unavailable.
-- The root `manifest.json` is a top-level array containing three inline package entries. Each release workflow updates only its matching entry; do not hand-edit any manifest `releases` array.
+- The root `manifest.json` is an aggregate array of `{id, type: "manifest", url}` refs pointing to each plugin's manifest in `manifests/`. Each release workflow updates only its own `manifests/<plugin>.json`; do not hand-edit any manifest `releases` array.
 
 ## Shoko integration constraints
 
 - Shoko supplies `Shoko.Abstractions` at runtime. Do not copy it with AniDB Watch History, and preserve `ExcludeAssets="runtime"` on the other plugins' server-owned package references.
 - Movie Missing Filter's Harmony targets are reflection-based against Shoko Daily internals. Keep `Patching/PatchBootstrap.cs` fail-safe: unavailable or incompatible targets must leave Shoko's native behavior intact.
-- Release workflows publish ZIPs for `linux-arm64`, `linux-x64`, and `win-x64`, then update only their matching root-manifest entry. Do not hand-edit any manifest `releases` array.
+- Release workflows publish ZIPs for `linux-arm64`, `linux-x64`, and `win-x64`, then update only their matching `manifests/<plugin>.json`. Do not hand-edit any manifest `releases` array.
