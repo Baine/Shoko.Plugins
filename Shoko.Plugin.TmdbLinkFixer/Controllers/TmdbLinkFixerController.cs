@@ -25,7 +25,15 @@ public sealed class TmdbLinkFixerController(TmdbLinkFixerService service, IUserS
 
     [HttpGet("links")]
     public ActionResult<IReadOnlyList<TmdbLinkItem>> Links()
-        => IsAdmin() ? Ok(service.GetLinks()) : Forbid();
+    {
+        if (!IsAdmin()) return Forbid();
+        if (!service.TryGetLinks(out var links))
+        {
+            Response.Headers.RetryAfter = "2";
+            return Accepted();
+        }
+        return Ok(links);
+    }
 
     [HttpGet("scan")]
     public ActionResult<ScanState> ScanState()

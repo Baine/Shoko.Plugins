@@ -18,14 +18,28 @@ public sealed class TmdbLinkFixerService(
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, CheckedLink> _checks = new(StringComparer.Ordinal);
+    private Task<List<LinkSnapshot>>? _snapshotTask;
     private Task? _scanTask;
     private ScanState _scanState = new(false, 0, 0, 0, 0, 0, null, null);
 
-    public IReadOnlyList<TmdbLinkItem> GetLinks()
+    public bool TryGetLinks(out IReadOnlyList<TmdbLinkItem> links)
     {
-        var links = CreateSnapshots();
         lock (_gate)
-            return links.Select(ToItem).OrderByDescending(x => ProblemOrder(x.Health)).ThenBy(x => x.SeriesTitle).ThenBy(x => x.EpisodeLabel).ToList();
+        {
+            if (_snapshotTask is { IsCompletedSuccessfully: true } completed)
+            {
+                links = completed.Result.Select(ToItem).OrderByDescending(x => ProblemOrder(x.Health)).ThenBy(x => x.SeriesTitle).ThenBy(x => x.EpisodeLabel).ToList();
+                return true;
+            }
+            if (_snapshotTask is { IsFaulted: true } failed)
+            {
+                _snapshotTask = null;
+                throw new InvalidOperationException("TMDB link snapshot build failed.", failed.Exception);
+            }
+            _snapshotTask ??= Task.Run(BuildSnapshots);
+            links = [];
+            return false;
+        }
     }
 
     public ScanState GetScanState()
@@ -40,6 +54,7 @@ public sealed class TmdbLinkFixerService(
         {
             if (_scanTask is { IsCompleted: false })
                 return false;
+            _snapshotTask = null;
             _scanTask = Task.Run(ScanAllAsync);
             return true;
         }
@@ -73,7 +88,7 @@ public sealed class TmdbLinkFixerService(
         if (request.TargetId <= 0)
             return new(false, "The target TMDB ID must be greater than zero.");
 
-        var source = CreateSnapshots().SingleOrDefault(x => x.Key == request.Key);
+        var source = BuildSnapshots().SingleOrDefault(x => x.Key == request.Key);
         if (source is null)
             return new(false, "The existing link no longer exists. Refresh the page before trying again.");
         if (source.Kind == request.TargetKind && source.TmdbId == request.TargetId)
@@ -129,7 +144,8 @@ public sealed class TmdbLinkFixerService(
             }
 
             await RemoveSourceAsync(source).WaitAsync(cancellationToken).ConfigureAwait(false);
-            Forget(source.Key);
+            lock (_gate)
+                _checks.Remove(source.Key);
             logger.LogInformation(
                 "User-confirmed TMDB link replacement: {SourceKind} {SourceId} to {TargetKind} {TargetId} for AniDB anime {AnimeId}",
                 source.Kind, source.TmdbId, request.TargetKind, request.TargetId, source.AnidbAnimeId);
@@ -140,6 +156,11 @@ public sealed class TmdbLinkFixerService(
             logger.LogError(ex, "Failed applying user-confirmed TMDB replacement for {LinkKey}", request.Key);
             return new(false, "The confirmed replacement failed. The new link may have been added alongside the old link; refresh the page and check the Shoko log.");
         }
+        finally
+        {
+            lock (_gate)
+                _snapshotTask = null;
+        }
     }
 
     private async Task ScanAllAsync()
@@ -149,7 +170,7 @@ public sealed class TmdbLinkFixerService(
 
         try
         {
-            var links = CreateSnapshots();
+            var links = BuildSnapshots();
             SetState(new(true, links.Count, 0, 0, 0, 0, started, null));
         var remoteChecks = new Dictionary<(TmdbMediaKind Kind, int Id), ProbeResult>();
             var automaticSearches = new Dictionary<int, IReadOnlyList<SearchResult>>();
@@ -201,27 +222,34 @@ public sealed class TmdbLinkFixerService(
         }
     }
 
-    private List<LinkSnapshot> CreateSnapshots()
+    private List<LinkSnapshot> BuildSnapshots()
     {
         var result = new List<LinkSnapshot>();
-        foreach (var series in metadataService.GetAllShokoSeries())
+        var allSeries = metadataService.GetAllShokoSeries();
+        foreach (var series in allSeries)
         {
-            var episodes = series.Episodes
+            var showRefs = series.TmdbShowCrossReferences.DistinctBy(x => (x.AnidbAnimeID, x.TmdbShowID)).ToList();
+            var movieRefs = series.TmdbMovieCrossReferences.DistinctBy(x => (x.AnidbEpisodeID, x.TmdbMovieID)).ToList();
+            if (showRefs.Count is 0 && movieRefs.Count is 0)
+                continue;
+
+            var rawEpisodes = series.Episodes;
+            var episodes = rawEpisodes
                 .OrderBy(x => x.Type)
                 .ThenBy(x => x.EpisodeNumber)
                 .Select(x => new EpisodeOption(x.AnidbEpisodeID, $"{EpisodePrefix(x)}{x.EpisodeNumber}: {x.Title}"))
                 .ToList();
             var anidbPosterUrl = ImageUrl(series.AnidbAnime.PrimaryImage);
 
-            foreach (var xref in series.TmdbShowCrossReferences.DistinctBy(x => (x.AnidbAnimeID, x.TmdbShowID)))
+            foreach (var xref in showRefs)
                 result.Add(new(
                     ShowKey(xref.AnidbAnimeID, xref.TmdbShowID), series.ID, xref.AnidbAnimeID, null,
                     series.Title, null, null, anidbPosterUrl, TmdbMediaKind.Show, xref.TmdbShowID,
                     ImageUrl(xref.TmdbShow?.PrimaryImage), episodes));
 
-            foreach (var xref in series.TmdbMovieCrossReferences.DistinctBy(x => (x.AnidbEpisodeID, x.TmdbMovieID)))
+            foreach (var xref in movieRefs)
             {
-                var episode = series.Episodes.FirstOrDefault(x => x.AnidbEpisodeID == xref.AnidbEpisodeID);
+                var episode = rawEpisodes.FirstOrDefault(x => x.AnidbEpisodeID == xref.AnidbEpisodeID);
                 result.Add(new(
                     MovieKey(xref.AnidbEpisodeID, xref.TmdbMovieID), series.ID, xref.AnidbAnimeID, xref.AnidbEpisodeID,
                     series.Title, episode?.Title, episode is null ? $"AniDB EID {xref.AnidbEpisodeID}" : $"{EpisodePrefix(episode)}{episode.EpisodeNumber}",

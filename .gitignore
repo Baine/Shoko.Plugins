@@ -1,3 +1,4 @@
 .slim/deepwork/
 **/bin/
 **/obj/
+.env

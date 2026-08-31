@@ -72,7 +72,7 @@
   <p>Checks existing links and helps you compare replacements. Nothing is replaced from a scan or search result; an administrator must review one exact candidate and explicitly confirm it.</p>
   <div class="toolbar">
     <div class="summary" id="summary">Loading links…</div>
-    <button class="primary" id="scan">Check all links</button>
+    <button class="primary" id="scan" disabled>Check all links</button>
   </div>
   <div class="filters">
     <select id="filter"><option value="all">All links</option><option value="problems">Problems only</option><option value="unchecked">Not checked</option><option value="valid">Valid only</option></select>
@@ -90,10 +90,11 @@ const kindLabel=k=>k==='Movie'?'Movie':'Show';
 const healthLabel=h=>({NotChecked:'Not checked',Checking:'Checking',Valid:'Valid',Redirected:'Redirected',Invalid:'Invalid',Error:'Check failed'})[h]||h;
 const safeId=s=>s.replace(/[^a-zA-Z0-9]/g,'_');
 const tmdbUrl=(kind,id)=>`https://www.themoviedb.org/${kind==='Movie'?'movie':'tv'}/${id}`;
-async function request(path,options={}){const r=await fetch(api+path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const type=r.headers.get('content-type')||'';const body=type.includes('json')?await r.json():await r.text();if(!r.ok)throw new Error(typeof body==='string'?body:(body.message||body.title||`HTTP ${r.status}`));return body;}
+function apiKey(){try{return (JSON.parse(localStorage.getItem('apiSession')||'{}').apikey||'').trim();}catch(e){return '';}}
+async function request(path,options={}){const key=apiKey();const headers={'Content-Type':'application/json',...(key?{apikey:key}:{}),...(options.headers||{})};const r=await fetch(api+path,{credentials:'same-origin',headers,...options});if(r.status===202){const delay=Math.min(parseInt(r.headers.get('retry-after')||'2',10)||2,5)*1000;await new Promise(res=>setTimeout(res,delay));return request(path,options);}const type=r.headers.get('content-type')||'';const body=type.includes('json')?await r.json():await r.text();if(!r.ok)throw new Error(typeof body==='string'?body:(body.message||body.title||`HTTP ${r.status}`));return body;}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.className='toast show'+(error?' error':'');setTimeout(()=>el.className='toast',6000);}
 function previewLink(url,label,poster,newLink=false){return `<a class="preview-link${newLink?' new':''}" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗${poster?`<img class="hover-poster" src="${esc(poster)}" alt="${esc(label)} poster">`:''}</a>`;}
-async function load(){try{state.links=await request('/links');state.scan=await request('/scan');render();if(state.scan.running)poll();}catch(e){$('list').innerHTML=`<div class="notice">${esc(e.message)}<br>This page is available only to Shoko administrators.</div>`;$('scan').disabled=true;}}
+async function load(){try{state.links=await request('/links');state.scan=await request('/scan');render();if(state.scan.running)poll();}catch(e){const missing=!apiKey();$('list').innerHTML=`<div class="notice">${missing?'No Shoko session found in this browser. Log in to the Shoko web UI, then reload this page.':esc(e.message)}<br>This page is available only to Shoko administrators.</div>`;$('scan').disabled=true;}}
 function filtered(){const mode=$('filter').value,q=$('textFilter').value.trim().toLowerCase();return state.links.filter(x=>{const modeOk=mode==='all'||(mode==='problems'&&['Invalid','Redirected','Error'].includes(x.health))||(mode==='unchecked'&&['NotChecked','Checking'].includes(x.health))||(mode==='valid'&&x.health==='Valid');const hay=`${x.seriesTitle} ${x.episodeTitle||''} ${x.episodeLabel||''} ${x.tmdbId}`.toLowerCase();return modeOk&&(!q||hay.includes(q));});}
 function render(){const s=state.scan||{running:false,total:state.links.length,completed:0,valid:0,problems:0,errors:0};$('scan').disabled=s.running;$('scan').textContent=s.running?'Scan running…':'Check all links';$('summary').innerHTML=s.running?`<progress max="${s.total||1}" value="${s.completed}"></progress> ${s.completed} / ${s.total} checked`:`${state.links.length} links · ${s.valid||0} valid · ${s.problems||0} problematic · ${s.errors||0} could not be checked`;const links=filtered();$('list').innerHTML=links.length?links.map(card).join(''):'<div class="empty">No matching links.</div>';}
 function card(x){

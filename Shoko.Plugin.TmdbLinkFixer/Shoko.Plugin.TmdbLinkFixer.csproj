@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>Shoko.Plugin.TmdbLinkFixer</AssemblyName>
     <RootNamespace>Shoko.Plugin.TmdbLinkFixer</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Baine</Authors>
     <Description>Scans AniDB to TMDB links, compares possible replacements, and applies only replacements explicitly confirmed by an administrator.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
