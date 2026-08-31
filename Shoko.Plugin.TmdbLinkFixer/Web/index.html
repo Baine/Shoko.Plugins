@@ -15,6 +15,12 @@
     a { color:#79c0ff; text-decoration:none; }
     .toolbar,.filters,.actions,.searchbar,.summary,.link-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .toolbar { justify-content:space-between; margin:22px 0 14px; }
+    .settings { border:1px solid var(--line); border-radius:10px; padding:16px; margin:18px 0; background:var(--card); }
+    .settings-grid { display:grid; grid-template-columns:minmax(260px,1fr) 170px auto; gap:10px; align-items:end; }
+    .settings label { display:grid; gap:6px; color:var(--muted); font-size:13px; }
+    .settings-note { margin:10px 0 0; font-size:13px; }
+    .configured { color:#56d364; }
+    .not-configured { color:#e3b341; }
     button,input,select { font:inherit; }
     button { border:1px solid var(--line); border-radius:7px; padding:8px 13px; background:#21262d; color:var(--text); cursor:pointer; font-weight:600; }
     button:hover:not(:disabled) { border-color:#8c959f; }
@@ -63,13 +69,24 @@
     .toast { position:fixed; z-index:100; right:20px; bottom:20px; max-width:440px; border:1px solid var(--line); border-radius:9px; padding:12px 16px; background:#21262d; box-shadow:0 8px 30px #0008; display:none; }
     .toast.show { display:block; }
     .toast.error { border-color:var(--red); }
-    @media (max-width:800px) { .card-head,.compare { grid-template-columns:1fr; } progress { width:150px; } .hover-poster { left:auto; right:0; } }
+    @media (max-width:800px) { .card-head,.compare,.settings-grid { grid-template-columns:1fr; } progress { width:150px; } .hover-poster { left:auto; right:0; } }
   </style>
 </head>
 <body>
 <main>
   <h1>TMDB Link Fixer</h1>
   <p>Checks existing links and helps you compare replacements. Nothing is replaced from a scan or search result; an administrator must review one exact candidate and explicitly confirm it.</p>
+  <section class="settings">
+    <h2>TMDB API validation</h2>
+    <p>Bulk checks use the TMDB API, never the public website. Enter a v3 API key or v4 read access token. Leaving the credential field empty keeps the saved value.</p>
+    <div class="settings-grid">
+      <label>API key or read access token<input id="apiCredential" type="password" autocomplete="new-password" placeholder="Saved credential is never displayed"></label>
+      <label>Maximum requests/second<input id="requestRate" type="number" min="1" max="10" value="10"></label>
+      <button id="saveSettings" onclick="saveSettings()">Save API settings</button>
+    </div>
+    <div class="actions" style="margin-top:10px"><label><input id="clearCredential" type="checkbox"> Clear the saved credential</label><span id="settingsStatus" class="not-configured">Loading API settings…</span></div>
+    <p class="settings-note">The rate is capped at 10 requests/second. Duplicate current links are checked once per media type and TMDB ID. The credential is stored in the plugin settings file and restricted to the Shoko process user on Unix-like systems.</p>
+  </section>
   <div class="toolbar">
     <div class="summary" id="summary">Loading links…</div>
     <button class="primary" id="scan" disabled>Check all links</button>
@@ -83,7 +100,7 @@
 <div class="toast" id="toast"></div>
 <script>
 const api='/api/plugin/tmdb-link-fixer';
-const state={links:[],scan:null,open:null,candidate:null,results:{}};
+const state={links:[],scan:null,settings:null,open:null,candidate:null,results:{}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const kindLabel=k=>k==='Movie'?'Movie':'Show';
@@ -98,23 +115,27 @@ function normalize(value){if(Array.isArray(value))return value.map(normalize);if
 async function request(path,options={}){const key=apiKey();const headers={'Content-Type':'application/json',...(key?{apikey:key}:{}),...(options.headers||{})};const r=await fetch(api+path,{credentials:'same-origin',headers,...options});if(r.status===202&&!options.method){const delay=Math.min(parseInt(r.headers.get('retry-after')||'2',10)||2,5)*1000;await new Promise(res=>setTimeout(res,delay));return request(path,options);}const type=r.headers.get('content-type')||'';const body=type.includes('json')?normalize(await r.json()):await r.text();if(!r.ok)throw new Error(typeof body==='string'?body:(body.message||body.title||`HTTP ${r.status}`));return body;}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.className='toast show'+(error?' error':'');setTimeout(()=>el.className='toast',6000);}
 function previewLink(url,label,poster,newLink=false){return `<a class="preview-link${newLink?' new':''}" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗${poster?`<img class="hover-poster" src="${esc(poster)}" alt="${esc(label)} poster">`:''}</a>`;}
-async function load(){try{state.links=await request('/links');state.scan=await request('/scan');render();if(state.scan.running)poll();}catch(e){const missing=!apiKey();$('list').innerHTML=`<div class="notice">${missing?'No Shoko session found in this browser. Log in to the Shoko web UI, then reload this page.':esc(e.message)}<br>This page is available only to Shoko administrators.</div>`;$('scan').disabled=true;}}
+async function load(){try{state.settings=await request('/settings');renderSettings();state.links=await request('/links');state.scan=await request('/scan');render();if(state.scan.running)poll();}catch(e){const missing=!apiKey();$('list').innerHTML=`<div class="notice">${missing?'No Shoko session found in this browser. Log in to the Shoko web UI, then reload this page.':esc(e.message)}<br>This page is available only to Shoko administrators.</div>`;$('scan').disabled=true;}}
 function filtered(){const mode=$('filter').value,q=$('textFilter').value.trim().toLowerCase();return state.links.filter(x=>{const modeOk=mode==='all'||(mode==='problems'&&['Invalid','Redirected','Error'].includes(x.health))||(mode==='unchecked'&&['NotChecked','Checking'].includes(x.health))||(mode==='valid'&&x.health==='Valid');const hay=`${x.seriesTitle} ${x.episodeTitle||''} ${x.episodeLabel||''} ${x.tmdbId}`.toLowerCase();return modeOk&&(!q||hay.includes(q));});}
-function render(){const s=state.scan||{running:false,total:state.links.length,completed:0,valid:0,problems:0,errors:0};$('scan').disabled=s.running;$('scan').textContent=s.running?'Scan running…':'Check all links';$('summary').innerHTML=s.running?`<progress max="${s.total||1}" value="${s.completed}"></progress> ${s.completed} / ${s.total} checked`:`${state.links.length} links · ${s.valid||0} valid · ${s.problems||0} problematic · ${s.errors||0} could not be checked`;const links=filtered();$('list').innerHTML=links.length?links.map(card).join(''):'<div class="empty">No matching links.</div>';}
+function render(){const s=state.scan||{running:false,total:state.links.length,completed:0,valid:0,problems:0,errors:0};$('scan').disabled=s.running||!state.settings?.apiCredentialConfigured;$('scan').textContent=s.running?'Scan running…':'Check all links';$('summary').innerHTML=s.running?`<progress max="${s.total||1}" value="${s.completed}"></progress> ${s.completed} / ${s.total} checked`:`${state.links.length} links · ${s.valid||0} valid · ${s.problems||0} problematic · ${s.errors||0} could not be checked`;const links=filtered();$('list').innerHTML=links.length?links.map(card).join(''):'<div class="empty">No matching links.</div>';}
+function renderSettings(){if(!state.settings)return;$('requestRate').value=state.settings.requestsPerSecond;$('settingsStatus').className=state.settings.apiCredentialConfigured?'configured':'not-configured';$('settingsStatus').textContent=state.settings.apiCredentialConfigured?`Configured (${state.settings.credentialType})`:'No API credential configured — scanning is disabled';}
+async function saveSettings(){const button=$('saveSettings');button.disabled=true;try{state.settings=await request('/settings',{method:'POST',body:JSON.stringify({apiCredential:$('apiCredential').value,clearApiCredential:$('clearCredential').checked,requestsPerSecond:Number($('requestRate').value)})});$('apiCredential').value='';$('clearCredential').checked=false;renderSettings();render();toast('TMDB API settings saved.');}catch(e){toast(e.message,true);}finally{button.disabled=false;}}
 function card(x){
   const redirect=x.health==='Redirected'&&x.redirectKind&&x.redirectId;
   const links=previewLink(x.anidbUrl,`AniDB ${x.anidbAnimeId}`,x.anidbPosterUrl)+previewLink(x.tmdbUrl,`Current TMDB ${kindLabel(x.kind)} ${x.tmdbId}`,x.oldPosterUrl)+(redirect?previewLink(tmdbUrl(x.redirectKind,x.redirectId),`Found TMDB ${kindLabel(x.redirectKind)} ${x.redirectId}`,x.redirectPosterUrl,true):'');
-  return `<article class="card"><div class="card-head"><div><div class="series">${esc(x.seriesTitle)}</div><div class="sub">${x.episodeLabel?`${esc(x.episodeLabel)} · ${esc(x.episodeTitle||'')}`:`AniDB AID ${x.anidbAnimeId}`}</div></div><div class="link-row">${links}</div><span class="badge ${x.health}">${healthLabel(x.health)}</span></div>${x.message?`<div class="problem">${esc(x.message)}</div>`:''}<div class="card-actions actions">${redirect?`<button onclick="reviewRedirect('${x.key}')">Review found link</button>`:''}<button onclick="toggleSearch('${x.key}')">Search manually</button></div><div class="search-panel ${state.open===x.key?'open':''}">${state.open===x.key?panel(x):''}</div></article>`;
+  return `<article class="card"><div class="card-head"><div><div class="series">${esc(x.seriesTitle)}</div><div class="sub">${x.episodeLabel?`${esc(x.episodeLabel)} · ${esc(x.episodeTitle||'')}`:`AniDB AID ${x.anidbAnimeId}`}</div></div><div class="link-row">${links}</div><span class="badge ${x.health}">${healthLabel(x.health)}</span></div>${x.message?`<div class="problem">${esc(x.message)}</div>`:''}<div class="card-actions actions">${redirect?`<button onclick="reviewRedirect('${x.key}')">Review found link</button>`:''}${['Invalid','Redirected'].includes(x.health)?`<button onclick="findSuggestions('${x.key}')">Find automatic suggestions</button>`:''}<button onclick="toggleSearch('${x.key}')">Search manually</button></div><div class="search-panel ${state.open===x.key?'open':''}">${state.open===x.key?panel(x):''}</div></article>`;
 }
 function panel(x){const saved=state.results[x.key]||[];return `<h2>Find a replacement</h2><p>Search results never change a link. Select one to open the final side-by-side review.</p><div class="searchbar"><input type="search" id="query-${safeId(x.key)}" value="${esc(x.seriesTitle)}"><button onclick="search('${x.key}')">Search movies and shows</button></div><div id="results-${safeId(x.key)}" class="search-results">${saved.map((r,i)=>resultCard(x.key,r,i)).join('')}</div>${state.candidate?.key===x.key?reviewPanel(x,state.candidate):''}`;}
-function resultCard(key,r,i){return `<div class="result">${r.posterUrl?`<img class="poster" src="${esc(r.posterUrl)}" alt="">`:'<div class="poster"></div>'}<div><div class="result-title">${previewLink(r.tmdbUrl,r.title,r.posterUrl)}</div><div class="result-meta">${kindLabel(r.kind)} · TMDB ${r.id}${r.date?' · '+esc(r.date):''}</div><div class="result-overview">${esc(r.overview||r.originalTitle)}</div><button onclick="reviewSearch('${key}',${i})">Review this candidate</button></div></div>`;}
+function resultCard(key,r,i){return `<div class="result">${r.posterUrl?`<img class="poster" src="${esc(r.posterUrl)}" alt="">`:'<div class="poster"></div>'}<div><div class="result-title">${previewLink(r.tmdbUrl,r.title,r.posterUrl)}</div><div class="result-meta">${kindLabel(r.kind)} · TMDB ${r.id}${r.date?' · '+esc(r.date):''}${r.matchReason?' · Unverified suggestion: '+esc(r.matchReason):''}</div><div class="result-overview">${esc(r.overview||r.originalTitle)}</div><button onclick="reviewSearch('${key}',${i})">Review this candidate</button></div></div>`;}
 function toggleSearch(key){state.open=state.open===key?null:key;state.candidate=null;render();if(state.open&&!state.results[key])setTimeout(()=>search(key),0);}
 async function search(key){const input=$(`query-${safeId(key)}`),box=$(`results-${safeId(key)}`),q=input?.value.trim();if(!q||q.length<2)return;box.innerHTML='<div class="sub">Searching…</div>';try{state.results[key]=await request('/search?query='+encodeURIComponent(q));state.candidate=null;render();}catch(e){box.innerHTML=`<div class="problem">${esc(e.message)}</div>`;}}
+async function findSuggestions(key){state.open=key;state.candidate=null;render();const box=$(`results-${safeId(key)}`);box.innerHTML='<div class="sub">Finding unverified suggestions…</div>';try{state.results[key]=await request('/suggestions?key='+encodeURIComponent(key));render();if(!state.results[key].length)toast('No automatic suggestions were found. Try a manual search.');}catch(e){box.innerHTML=`<div class="problem">${esc(e.message)}</div>`;}}
 function reviewRedirect(key){const x=state.links.find(v=>v.key===key);state.open=key;state.candidate={key,kind:x.redirectKind,id:x.redirectId,title:`TMDB ${kindLabel(x.redirectKind)} ${x.redirectId}`,posterUrl:x.redirectPosterUrl,tmdbUrl:tmdbUrl(x.redirectKind,x.redirectId)};render();}
 function reviewSearch(key,index){const r=state.results[key][index];state.open=key;state.candidate={key,...r};render();}
 function poster(url,label){return url?`<img class="compare-poster" src="${esc(url)}" alt="${esc(label)} poster">`:`<div class="compare-poster placeholder">No poster available</div>`;}
 function reviewPanel(x,c){
-  const episode=c.kind==='Movie'?`<div class="episode-row"><label>Link the movie to AniDB episode <select id="episode-${safeId(x.key)}">${x.episodes.map(e=>`<option value="${e.anidbEpisodeId}" ${e.anidbEpisodeId===x.anidbEpisodeId?'selected':''}>${esc(e.label)}</option>`).join('')}</select></label></div>`:'';
+  const selectedEpisode=c.anidbEpisodeId||x.anidbEpisodeId;
+  const episode=c.kind==='Movie'?`<div class="episode-row"><label>Link the movie to AniDB episode <select id="episode-${safeId(x.key)}">${x.episodes.map(e=>`<option value="${e.anidbEpisodeId}" ${e.anidbEpisodeId===selectedEpisode?'selected':''}>${esc(e.label)}</option>`).join('')}</select></label></div>`:'';
   return `<div class="review"><h2>Final comparison — no change has been made</h2><div class="compare"><div class="compare-item"><div class="compare-label">AniDB source</div>${poster(x.anidbPosterUrl,'AniDB')}<a href="${esc(x.anidbUrl)}" target="_blank" rel="noopener">AniDB ${x.anidbAnimeId} ↗</a><div class="sub">${esc(x.seriesTitle)}</div></div><div class="compare-item"><div class="compare-label">Current TMDB link</div>${poster(x.oldPosterUrl,'current TMDB')}<a href="${esc(x.tmdbUrl)}" target="_blank" rel="noopener">${kindLabel(x.kind)} ${x.tmdbId} ↗</a></div><div class="compare-item proposed"><div class="compare-label">Proposed TMDB link</div>${poster(c.posterUrl,'proposed TMDB')}<a href="${esc(c.tmdbUrl||tmdbUrl(c.kind,c.id))}" target="_blank" rel="noopener">${esc(c.title)} — ${kindLabel(c.kind)} ${c.id} ↗</a></div></div>${episode}<div class="confirm-box"><label><input id="confirm-${safeId(x.key)}" type="checkbox" onchange="enableAccept('${x.key}')"><span>I personally verified that AniDB ${x.anidbAnimeId} should replace its current TMDB ${kindLabel(x.kind)} ${x.tmdbId} link with TMDB ${kindLabel(c.kind)} ${c.id}. This is not an automatic match.</span></label><div class="actions" style="margin-top:12px"><button class="primary" id="accept-${safeId(x.key)}" disabled onclick="acceptCandidate('${x.key}')">Accept this exact replacement</button><button onclick="cancelReview('${x.key}')">Cancel</button></div></div></div>`;
 }
 function enableAccept(key){$(`accept-${safeId(key)}`).disabled=!$(`confirm-${safeId(key)}`).checked;}

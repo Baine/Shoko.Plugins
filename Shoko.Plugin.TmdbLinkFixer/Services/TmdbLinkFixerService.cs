@@ -4,6 +4,7 @@ using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Metadata.Shoko;
 using Shoko.Abstractions.Metadata.Tmdb;
 using Shoko.Abstractions.Metadata.Tmdb.Services;
+using Shoko.Plugin.TmdbLinkFixer.Configuration;
 using Shoko.Plugin.TmdbLinkFixer.Models;
 
 namespace Shoko.Plugin.TmdbLinkFixer.Services;
@@ -21,6 +22,8 @@ public sealed class TmdbLinkFixerService(
     private Task<List<LinkSnapshot>>? _snapshotTask;
     private Task? _scanTask;
     private ScanState _scanState = new(false, 0, 0, 0, 0, 0, null, null);
+
+    public bool ApiCredentialConfigured => TmdbLinkFixerSettingsStore.IsConfigured;
 
     public bool TryGetLinks(out IReadOnlyList<TmdbLinkItem> links)
     {
@@ -79,6 +82,14 @@ public sealed class TmdbLinkFixerService(
             Poster(x.PosterPath), x.Overview, (double)x.UserRating,
             TmdbLinkProbe.BuildUri(TmdbMediaKind.Show, x.ID).ToString()));
         return movies.Concat(shows).OrderByDescending(x => x.Rating).ThenBy(x => x.Title).ToList();
+    }
+
+    public async Task<IReadOnlyList<SearchResult>> FindSuggestionsAsync(string key, CancellationToken cancellationToken)
+    {
+        var source = BuildSnapshots().SingleOrDefault(x => x.Key == key);
+        if (source is null)
+            return [];
+        return await FindAutomaticCandidatesAsync(source.AnidbAnimeId, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<OperationResult> AcceptAsync(AcceptLinkRequest request, CancellationToken cancellationToken)
@@ -172,8 +183,7 @@ public sealed class TmdbLinkFixerService(
         {
             var links = BuildSnapshots();
             SetState(new(true, links.Count, 0, 0, 0, 0, started, null));
-        var remoteChecks = new Dictionary<(TmdbMediaKind Kind, int Id), ProbeResult>();
-            var automaticSearches = new Dictionary<int, IReadOnlyList<SearchResult>>();
+            var remoteChecks = new Dictionary<(TmdbMediaKind Kind, int Id), ProbeResult>();
             var completed = 0;
             var valid = 0;
             var problems = 0;
@@ -181,33 +191,26 @@ public sealed class TmdbLinkFixerService(
 
             foreach (var link in links)
             {
-                SetCheck(link.Key, new(LinkHealth.Checking, null, null, null, null, null, []));
+                SetCheck(link.Key, new(LinkHealth.Checking, null, null, null, null, null));
                 if (!remoteChecks.TryGetValue((link.Kind, link.TmdbId), out var result))
                 {
                     result = await probe.ProbeAsync(link.Kind, link.TmdbId).ConfigureAwait(false);
                     remoteChecks[(link.Kind, link.TmdbId)] = result;
                 }
 
-                IReadOnlyList<SearchResult> automaticCandidates = [];
-                if (result.Health == LinkHealth.Invalid)
-                {
-                    if (!automaticSearches.TryGetValue(link.AnidbAnimeId, out automaticCandidates!))
-                    {
-                        automaticCandidates = await FindAutomaticCandidatesAsync(link.AnidbAnimeId).ConfigureAwait(false);
-                        automaticSearches[link.AnidbAnimeId] = automaticCandidates;
-                    }
-                    automaticCandidates = automaticCandidates
-                        .Where(x => x.Kind != link.Kind || x.Id != link.TmdbId)
-                        .ToList();
-                }
-
                 SetCheck(link.Key, new(
                     result.Health, result.Message, result.RedirectKind, result.RedirectId,
-                    result.RedirectPosterUrl, DateTimeOffset.UtcNow, automaticCandidates));
+                    result.RedirectPosterUrl, DateTimeOffset.UtcNow));
                 completed++;
                 if (result.Health == LinkHealth.Valid) valid++;
                 else if (result.Health == LinkHealth.Error) errors++;
                 else problems++;
+                if (result.Fatal)
+                {
+                    SetState(new(false, links.Count, completed, valid, problems, errors, started, DateTimeOffset.UtcNow));
+                    logger.LogWarning("TMDB link scan stopped after a fatal API validation error: {Message}", result.Message);
+                    return;
+                }
                 SetState(new(true, links.Count, completed, valid, problems, errors, started, null));
             }
 
@@ -228,8 +231,12 @@ public sealed class TmdbLinkFixerService(
         var allSeries = metadataService.GetAllShokoSeries();
         foreach (var series in allSeries)
         {
-            var showRefs = series.TmdbShowCrossReferences.DistinctBy(x => (x.AnidbAnimeID, x.TmdbShowID)).ToList();
-            var movieRefs = series.TmdbMovieCrossReferences.DistinctBy(x => (x.AnidbEpisodeID, x.TmdbMovieID)).ToList();
+            var showRefs = series.TmdbShowCrossReferences
+                .Where(x => x.AnidbAnimeID > 0 && x.TmdbShowID > 0)
+                .DistinctBy(x => (x.AnidbAnimeID, x.TmdbShowID)).ToList();
+            var movieRefs = series.TmdbMovieCrossReferences
+                .Where(x => x.AnidbEpisodeID > 0 && x.TmdbMovieID > 0)
+                .DistinctBy(x => (x.AnidbEpisodeID, x.TmdbMovieID)).ToList();
             if (showRefs.Count is 0 && movieRefs.Count is 0)
                 continue;
 
@@ -262,15 +269,15 @@ public sealed class TmdbLinkFixerService(
 
     private TmdbLinkItem ToItem(LinkSnapshot link)
     {
-        var check = _checks.GetValueOrDefault(link.Key) ?? new CheckedLink(LinkHealth.NotChecked, null, null, null, null, null, []);
+        var check = _checks.GetValueOrDefault(link.Key) ?? new CheckedLink(LinkHealth.NotChecked, null, null, null, null, null);
         return new(link.Key, link.ShokoSeriesId, link.AnidbAnimeId, link.AnidbEpisodeId, link.SeriesTitle,
             link.EpisodeTitle, link.EpisodeLabel, $"https://anidb.net/anime/{link.AnidbAnimeId}", link.AnidbPosterUrl,
             link.Kind, link.TmdbId, TmdbLinkProbe.BuildUri(link.Kind, link.TmdbId).ToString(), link.OldPosterUrl,
             check.Health, check.Message, check.RedirectKind, check.RedirectId, check.RedirectPosterUrl, check.CheckedAt,
-            link.Episodes, check.AutomaticCandidates);
+            link.Episodes);
     }
 
-    private async Task<IReadOnlyList<SearchResult>> FindAutomaticCandidatesAsync(int anidbAnimeId)
+    private async Task<IReadOnlyList<SearchResult>> FindAutomaticCandidatesAsync(int anidbAnimeId, CancellationToken cancellationToken)
     {
         var series = metadataService.GetShokoSeriesByAnidbID(anidbAnimeId);
         if (series is null)
@@ -278,12 +285,16 @@ public sealed class TmdbLinkFixerService(
 
         try
         {
-            var results = await searchService.SearchForAutoMatch(series.AnidbAnime).ConfigureAwait(false);
+            var results = await searchService.SearchForAutoMatch(series.AnidbAnime).WaitAsync(cancellationToken).ConfigureAwait(false);
             return results.Select(x => x.IsMovie
                     ? ToSearchResult(x.TmdbMovie!, x.AnidbEpisode?.ID, x.MatchRating.ToString())
                     : ToSearchResult(x.TmdbShow!, x.MatchRating.ToString()))
                 .DistinctBy(x => (x.Kind, x.Id, x.AnidbEpisodeId))
                 .ToList();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -357,5 +368,5 @@ public sealed class TmdbLinkFixerService(
         string? OldPosterUrl, IReadOnlyList<EpisodeOption> Episodes);
     private sealed record CheckedLink(
         LinkHealth Health, string? Message, TmdbMediaKind? RedirectKind, int? RedirectId,
-        string? RedirectPosterUrl, DateTimeOffset? CheckedAt, IReadOnlyList<SearchResult> AutomaticCandidates);
+        string? RedirectPosterUrl, DateTimeOffset? CheckedAt);
 }

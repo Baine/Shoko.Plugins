@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shoko.Abstractions.User.Services;
+using Shoko.Plugin.TmdbLinkFixer.Configuration;
 using Shoko.Plugin.TmdbLinkFixer.Models;
 using Shoko.Plugin.TmdbLinkFixer.Services;
 
@@ -43,7 +44,20 @@ public sealed class TmdbLinkFixerController(TmdbLinkFixerService service, IUserS
     public IActionResult StartScan()
     {
         if (!IsAdmin()) return Forbid();
+        if (!service.ApiCredentialConfigured)
+            return Conflict("Configure a TMDB API key or read access token before scanning.");
         return service.StartScan() ? Accepted(service.GetScanState()) : Conflict("A scan is already running.");
+    }
+
+    [HttpGet("settings")]
+    public ActionResult<TmdbLinkFixerSettingsView> Settings()
+        => IsAdmin() ? Ok(TmdbLinkFixerSettingsStore.GetView()) : Forbid();
+
+    [HttpPost("settings")]
+    public ActionResult<TmdbLinkFixerSettingsView> UpdateSettings([FromBody] UpdateTmdbLinkFixerSettingsRequest request)
+    {
+        if (!IsAdmin()) return Forbid();
+        return Ok(TmdbLinkFixerSettingsStore.Update(request));
     }
 
     [HttpGet("search")]
@@ -51,8 +65,16 @@ public sealed class TmdbLinkFixerController(TmdbLinkFixerService service, IUserS
     {
         if (!IsAdmin()) return Forbid();
         if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
-            return BadRequest("Mindestens zwei Suchzeichen sind erforderlich.");
+            return BadRequest("Enter at least two search characters.");
         return Ok(await service.SearchAsync(query, cancellationToken));
+    }
+
+    [HttpGet("suggestions")]
+    public async Task<ActionResult<IReadOnlyList<SearchResult>>> Suggestions([FromQuery] string key, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (string.IsNullOrWhiteSpace(key)) return BadRequest("A link key is required.");
+        return Ok(await service.FindSuggestionsAsync(key, cancellationToken));
     }
 
     [HttpPost("accept")]

@@ -42,8 +42,7 @@ public sealed record TmdbLinkItem(
     int? RedirectId,
     string? RedirectPosterUrl,
     DateTimeOffset? CheckedAt,
-    IReadOnlyList<EpisodeOption> Episodes,
-    IReadOnlyList<SearchResult> AutomaticCandidates);
+    IReadOnlyList<EpisodeOption> Episodes);
 
 public sealed record ScanState(
     bool Running,
