@@ -524,5 +524,21 @@
         ]
       }
     ]
+  },
+  {
+    "id": "d346ad56-9ec6-47ca-a6dc-476b8d9fbab8",
+    "name": "TMDB Link Fixer",
+    "overview": "Checks existing TMDB movie and show links, compares possible replacements, and applies only replacements explicitly confirmed by an administrator.",
+    "authors": "Baine",
+    "repository_url": "https://github.com/Baine/Shoko.Plugins",
+    "homepage_url": null,
+    "tags": [
+      "tmdb",
+      "metadata",
+      "links",
+      "validation"
+    ],
+    "image_url": null,
+    "releases": []
   }
 ]

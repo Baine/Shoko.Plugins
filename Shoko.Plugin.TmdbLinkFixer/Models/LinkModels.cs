@@ -1,0 +1,80 @@
+using System.Text.Json.Serialization;
+
+namespace Shoko.Plugin.TmdbLinkFixer.Models;
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TmdbMediaKind
+{
+    Movie,
+    Show,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum LinkHealth
+{
+    NotChecked,
+    Checking,
+    Valid,
+    Redirected,
+    Invalid,
+    Error,
+}
+
+public sealed record EpisodeOption(int AnidbEpisodeId, string Label);
+
+public sealed record TmdbLinkItem(
+    string Key,
+    int ShokoSeriesId,
+    int AnidbAnimeId,
+    int? AnidbEpisodeId,
+    string SeriesTitle,
+    string? EpisodeTitle,
+    string? EpisodeLabel,
+    string AnidbUrl,
+    string? AnidbPosterUrl,
+    TmdbMediaKind Kind,
+    int TmdbId,
+    string TmdbUrl,
+    string? OldPosterUrl,
+    LinkHealth Health,
+    string? Message,
+    TmdbMediaKind? RedirectKind,
+    int? RedirectId,
+    string? RedirectPosterUrl,
+    DateTimeOffset? CheckedAt,
+    IReadOnlyList<EpisodeOption> Episodes,
+    IReadOnlyList<SearchResult> AutomaticCandidates);
+
+public sealed record ScanState(
+    bool Running,
+    int Total,
+    int Completed,
+    int Valid,
+    int Problems,
+    int Errors,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt);
+
+public sealed record SearchResult(
+    TmdbMediaKind Kind,
+    int Id,
+    string Title,
+    string OriginalTitle,
+    DateOnly? Date,
+    string? PosterUrl,
+    string Overview,
+    double Rating,
+    string TmdbUrl,
+    int? AnidbEpisodeId = null,
+    string? MatchReason = null);
+
+public sealed class AcceptLinkRequest
+{
+    public required string Key { get; init; }
+    public required TmdbMediaKind TargetKind { get; init; }
+    public int TargetId { get; init; }
+    public int? AnidbEpisodeId { get; init; }
+    public bool Confirmed { get; init; }
+}
+
+public sealed record OperationResult(bool Success, string Message);

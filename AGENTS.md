@@ -2,8 +2,8 @@
 
 ## Scope
 
-- This is an umbrella directory, not a solution: `Shoko.Plugin.AniDBWatchHistory/`, `Shoko.Plugin.MovieMissingFilter/`, and `Shoko.Plugin.NfoGenerator/` are independent .NET 10 Shoko plugins. Build and verify only the plugin you change; there is no repository-wide build or test command.
-- Plugin entrypoints are `Shoko.Plugin.AniDBWatchHistory/Plugin.cs`, `Shoko.Plugin.MovieMissingFilter/MovieMissingFilterPlugin.cs`, and `Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/NfoGeneratorPlugin.cs`; service/startup registrations live alongside them.
+- This is an umbrella directory, not a solution: `Shoko.Plugin.AniDBWatchHistory/`, `Shoko.Plugin.MovieMissingFilter/`, `Shoko.Plugin.NfoGenerator/`, and `Shoko.Plugin.TmdbLinkFixer/` are independent .NET 10 Shoko plugins. Build and verify only the plugin you change; there is no repository-wide build or test command.
+- Plugin entrypoints are `Shoko.Plugin.AniDBWatchHistory/Plugin.cs`, `Shoko.Plugin.MovieMissingFilter/MovieMissingFilterPlugin.cs`, `Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/NfoGeneratorPlugin.cs`, and `Shoko.Plugin.TmdbLinkFixer/Plugin.cs`; service/startup registrations live alongside them.
 - `Shoko.Plugin.NfoGenerator/AGENTS.md` is authoritative additional guidance for that plugin, including its release workflow and NFO invariants.
 
 ## Focused build and verification
@@ -16,6 +16,9 @@ Run from this directory:
 
 # Movie Missing Filter: cleans and recreates its deployable publish output.
 ./Shoko.Plugin.MovieMissingFilter/build.sh
+
+# TMDB Link Fixer: validation plus explicitly confirmed replacement workflow.
+./Shoko.Plugin.TmdbLinkFixer/build.sh
 
 # NFO Generator: run the self-check after resolver, writer, serialization, or comparison changes.
 dotnet build Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Release

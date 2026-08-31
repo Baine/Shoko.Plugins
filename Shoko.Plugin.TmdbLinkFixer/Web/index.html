@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TMDB Link Fixer</title>
+  <style>
+    :root { color-scheme:dark; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; --bg:#0d1117; --card:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --blue:#2f81f7; --red:#f85149; --amber:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); }
+    main { width:min(1180px,calc(100% - 32px)); margin:28px auto 70px; }
+    h1 { margin:0 0 6px; font-size:28px; }
+    h2 { margin:0; font-size:18px; }
+    p { color:var(--muted); line-height:1.5; }
+    a { color:#79c0ff; text-decoration:none; }
+    .toolbar,.filters,.actions,.searchbar,.summary,.link-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .toolbar { justify-content:space-between; margin:22px 0 14px; }
+    button,input,select { font:inherit; }
+    button { border:1px solid var(--line); border-radius:7px; padding:8px 13px; background:#21262d; color:var(--text); cursor:pointer; font-weight:600; }
+    button:hover:not(:disabled) { border-color:#8c959f; }
+    button.primary { background:#238636; border-color:rgba(240,246,252,.1); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input,select { border:1px solid var(--line); border-radius:7px; padding:8px 10px; background:#0d1117; color:var(--text); }
+    input[type=search] { min-width:260px; flex:1; }
+    .summary { min-height:26px; color:var(--muted); }
+    progress { width:220px; accent-color:var(--blue); }
+    .card { border:1px solid var(--line); border-radius:10px; background:var(--card); margin:10px 0; overflow:visible; }
+    .card-head { display:grid; grid-template-columns:minmax(230px,1.25fr) minmax(310px,1.4fr) auto; gap:16px; align-items:center; padding:16px; }
+    .series { font-weight:700; font-size:16px; }
+    .sub { margin-top:4px; color:var(--muted); font-size:13px; }
+    .badge { display:inline-flex; align-items:center; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; white-space:nowrap; }
+    .Valid { background:rgba(46,160,67,.18); color:#56d364; }
+    .Invalid { background:rgba(248,81,73,.18); color:#ff7b72; }
+    .Redirected { background:rgba(210,153,34,.18); color:#e3b341; }
+    .Error { background:rgba(139,148,158,.16); color:#c9d1d9; }
+    .Checking,.NotChecked { background:rgba(47,129,247,.16); color:#79c0ff; }
+    .problem { padding:0 16px 14px; color:#e3b341; font-size:13px; }
+    .card-actions { border-top:1px solid var(--line); padding:12px 16px; background:rgba(1,4,9,.25); }
+    .search-panel { display:none; border-top:1px solid var(--line); padding:16px; }
+    .search-panel.open { display:block; }
+    .search-results { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; margin-top:14px; }
+    .result { display:grid; grid-template-columns:56px 1fr; gap:10px; border:1px solid var(--line); border-radius:8px; padding:9px; }
+    .poster { width:56px; height:84px; border-radius:5px; object-fit:cover; background:#21262d; }
+    .result-title { font-weight:700; }
+    .result-meta,.result-overview { color:var(--muted); font-size:12px; }
+    .result-overview { margin:5px 0 8px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .preview-link { position:relative; display:inline-flex; border:1px solid var(--line); border-radius:7px; padding:6px 9px; background:#0d1117; z-index:2; }
+    .preview-link.new { border-color:var(--amber); }
+    .hover-poster { display:none; position:absolute; z-index:50; top:calc(100% + 7px); left:0; width:185px; max-height:278px; object-fit:cover; border:1px solid #8c959f; border-radius:8px; background:#21262d; box-shadow:0 12px 32px #000c; }
+    .preview-link:hover .hover-poster,.preview-link:focus .hover-poster { display:block; }
+    .review { margin-top:18px; border:1px solid var(--amber); border-radius:10px; padding:16px; background:rgba(210,153,34,.05); }
+    .compare { display:grid; grid-template-columns:repeat(3,minmax(150px,1fr)); gap:14px; margin:14px 0; }
+    .compare-item { border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
+    .compare-item.proposed { border-color:var(--amber); }
+    .compare-label { color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    .compare-poster { display:block; width:120px; height:180px; object-fit:cover; border-radius:6px; background:#21262d; margin:10px 0; }
+    .placeholder { display:grid; place-items:center; color:var(--muted); font-size:12px; }
+    .confirm-box { padding:12px; border-radius:8px; background:#0d1117; }
+    .confirm-box label { display:flex; gap:10px; align-items:flex-start; color:#f0f6fc; }
+    .confirm-box input[type=checkbox] { width:18px; height:18px; flex:0 0 auto; margin-top:2px; }
+    .episode-row { margin:12px 0; }
+    .empty,.notice { border:1px dashed var(--line); border-radius:10px; padding:28px; text-align:center; color:var(--muted); }
+    .toast { position:fixed; z-index:100; right:20px; bottom:20px; max-width:440px; border:1px solid var(--line); border-radius:9px; padding:12px 16px; background:#21262d; box-shadow:0 8px 30px #0008; display:none; }
+    .toast.show { display:block; }
+    .toast.error { border-color:var(--red); }
+    @media (max-width:800px) { .card-head,.compare { grid-template-columns:1fr; } progress { width:150px; } .hover-poster { left:auto; right:0; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>TMDB Link Fixer</h1>
+  <p>Checks existing links and helps you compare replacements. Nothing is replaced from a scan or search result; an administrator must review one exact candidate and explicitly confirm it.</p>
+  <div class="toolbar">
+    <div class="summary" id="summary">Loading links…</div>
+    <button class="primary" id="scan">Check all links</button>
+  </div>
+  <div class="filters">
+    <select id="filter"><option value="all">All links</option><option value="problems">Problems only</option><option value="unchecked">Not checked</option><option value="valid">Valid only</option></select>
+    <input id="textFilter" type="search" placeholder="Filter by series, episode, or TMDB ID">
+  </div>
+  <div id="list"></div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const api='/api/plugin/tmdb-link-fixer';
+const state={links:[],scan:null,open:null,candidate:null,results:{}};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const kindLabel=k=>k==='Movie'?'Movie':'Show';
+const healthLabel=h=>({NotChecked:'Not checked',Checking:'Checking',Valid:'Valid',Redirected:'Redirected',Invalid:'Invalid',Error:'Check failed'})[h]||h;
+const safeId=s=>s.replace(/[^a-zA-Z0-9]/g,'_');
+const tmdbUrl=(kind,id)=>`https://www.themoviedb.org/${kind==='Movie'?'movie':'tv'}/${id}`;
+async function request(path,options={}){const r=await fetch(api+path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const type=r.headers.get('content-type')||'';const body=type.includes('json')?await r.json():await r.text();if(!r.ok)throw new Error(typeof body==='string'?body:(body.message||body.title||`HTTP ${r.status}`));return body;}
+function toast(message,error=false){const el=$('toast');el.textContent=message;el.className='toast show'+(error?' error':'');setTimeout(()=>el.className='toast',6000);}
+function previewLink(url,label,poster,newLink=false){return `<a class="preview-link${newLink?' new':''}" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗${poster?`<img class="hover-poster" src="${esc(poster)}" alt="${esc(label)} poster">`:''}</a>`;}
+async function load(){try{state.links=await request('/links');state.scan=await request('/scan');render();if(state.scan.running)poll();}catch(e){$('list').innerHTML=`<div class="notice">${esc(e.message)}<br>This page is available only to Shoko administrators.</div>`;$('scan').disabled=true;}}
+function filtered(){const mode=$('filter').value,q=$('textFilter').value.trim().toLowerCase();return state.links.filter(x=>{const modeOk=mode==='all'||(mode==='problems'&&['Invalid','Redirected','Error'].includes(x.health))||(mode==='unchecked'&&['NotChecked','Checking'].includes(x.health))||(mode==='valid'&&x.health==='Valid');const hay=`${x.seriesTitle} ${x.episodeTitle||''} ${x.episodeLabel||''} ${x.tmdbId}`.toLowerCase();return modeOk&&(!q||hay.includes(q));});}
+function render(){const s=state.scan||{running:false,total:state.links.length,completed:0,valid:0,problems:0,errors:0};$('scan').disabled=s.running;$('scan').textContent=s.running?'Scan running…':'Check all links';$('summary').innerHTML=s.running?`<progress max="${s.total||1}" value="${s.completed}"></progress> ${s.completed} / ${s.total} checked`:`${state.links.length} links · ${s.valid||0} valid · ${s.problems||0} problematic · ${s.errors||0} could not be checked`;const links=filtered();$('list').innerHTML=links.length?links.map(card).join(''):'<div class="empty">No matching links.</div>';}
+function card(x){
+  const redirect=x.health==='Redirected'&&x.redirectKind&&x.redirectId;
+  const links=previewLink(x.anidbUrl,`AniDB ${x.anidbAnimeId}`,x.anidbPosterUrl)+previewLink(x.tmdbUrl,`Current TMDB ${kindLabel(x.kind)} ${x.tmdbId}`,x.oldPosterUrl)+(redirect?previewLink(tmdbUrl(x.redirectKind,x.redirectId),`Found TMDB ${kindLabel(x.redirectKind)} ${x.redirectId}`,x.redirectPosterUrl,true):'');
+  return `<article class="card"><div class="card-head"><div><div class="series">${esc(x.seriesTitle)}</div><div class="sub">${x.episodeLabel?`${esc(x.episodeLabel)} · ${esc(x.episodeTitle||'')}`:`AniDB AID ${x.anidbAnimeId}`}</div></div><div class="link-row">${links}</div><span class="badge ${x.health}">${healthLabel(x.health)}</span></div>${x.message?`<div class="problem">${esc(x.message)}</div>`:''}<div class="card-actions actions">${redirect?`<button onclick="reviewRedirect('${x.key}')">Review found link</button>`:''}<button onclick="toggleSearch('${x.key}')">Search manually</button></div><div class="search-panel ${state.open===x.key?'open':''}">${state.open===x.key?panel(x):''}</div></article>`;
+}
+function panel(x){const saved=state.results[x.key]||[];return `<h2>Find a replacement</h2><p>Search results never change a link. Select one to open the final side-by-side review.</p><div class="searchbar"><input type="search" id="query-${safeId(x.key)}" value="${esc(x.seriesTitle)}"><button onclick="search('${x.key}')">Search movies and shows</button></div><div id="results-${safeId(x.key)}" class="search-results">${saved.map((r,i)=>resultCard(x.key,r,i)).join('')}</div>${state.candidate?.key===x.key?reviewPanel(x,state.candidate):''}`;}
+function resultCard(key,r,i){return `<div class="result">${r.posterUrl?`<img class="poster" src="${esc(r.posterUrl)}" alt="">`:'<div class="poster"></div>'}<div><div class="result-title">${previewLink(r.tmdbUrl,r.title,r.posterUrl)}</div><div class="result-meta">${kindLabel(r.kind)} · TMDB ${r.id}${r.date?' · '+esc(r.date):''}</div><div class="result-overview">${esc(r.overview||r.originalTitle)}</div><button onclick="reviewSearch('${key}',${i})">Review this candidate</button></div></div>`;}
+function toggleSearch(key){state.open=state.open===key?null:key;state.candidate=null;render();if(state.open&&!state.results[key])setTimeout(()=>search(key),0);}
+async function search(key){const input=$(`query-${safeId(key)}`),box=$(`results-${safeId(key)}`),q=input?.value.trim();if(!q||q.length<2)return;box.innerHTML='<div class="sub">Searching…</div>';try{state.results[key]=await request('/search?query='+encodeURIComponent(q));state.candidate=null;render();}catch(e){box.innerHTML=`<div class="problem">${esc(e.message)}</div>`;}}
+function reviewRedirect(key){const x=state.links.find(v=>v.key===key);state.open=key;state.candidate={key,kind:x.redirectKind,id:x.redirectId,title:`TMDB ${kindLabel(x.redirectKind)} ${x.redirectId}`,posterUrl:x.redirectPosterUrl,tmdbUrl:tmdbUrl(x.redirectKind,x.redirectId)};render();}
+function reviewSearch(key,index){const r=state.results[key][index];state.open=key;state.candidate={key,...r};render();}
+function poster(url,label){return url?`<img class="compare-poster" src="${esc(url)}" alt="${esc(label)} poster">`:`<div class="compare-poster placeholder">No poster available</div>`;}
+function reviewPanel(x,c){
+  const episode=c.kind==='Movie'?`<div class="episode-row"><label>Link the movie to AniDB episode <select id="episode-${safeId(x.key)}">${x.episodes.map(e=>`<option value="${e.anidbEpisodeId}" ${e.anidbEpisodeId===x.anidbEpisodeId?'selected':''}>${esc(e.label)}</option>`).join('')}</select></label></div>`:'';
+  return `<div class="review"><h2>Final comparison — no change has been made</h2><div class="compare"><div class="compare-item"><div class="compare-label">AniDB source</div>${poster(x.anidbPosterUrl,'AniDB')}<a href="${esc(x.anidbUrl)}" target="_blank" rel="noopener">AniDB ${x.anidbAnimeId} ↗</a><div class="sub">${esc(x.seriesTitle)}</div></div><div class="compare-item"><div class="compare-label">Current TMDB link</div>${poster(x.oldPosterUrl,'current TMDB')}<a href="${esc(x.tmdbUrl)}" target="_blank" rel="noopener">${kindLabel(x.kind)} ${x.tmdbId} ↗</a></div><div class="compare-item proposed"><div class="compare-label">Proposed TMDB link</div>${poster(c.posterUrl,'proposed TMDB')}<a href="${esc(c.tmdbUrl||tmdbUrl(c.kind,c.id))}" target="_blank" rel="noopener">${esc(c.title)} — ${kindLabel(c.kind)} ${c.id} ↗</a></div></div>${episode}<div class="confirm-box"><label><input id="confirm-${safeId(x.key)}" type="checkbox" onchange="enableAccept('${x.key}')"><span>I personally verified that AniDB ${x.anidbAnimeId} should replace its current TMDB ${kindLabel(x.kind)} ${x.tmdbId} link with TMDB ${kindLabel(c.kind)} ${c.id}. This is not an automatic match.</span></label><div class="actions" style="margin-top:12px"><button class="primary" id="accept-${safeId(x.key)}" disabled onclick="acceptCandidate('${x.key}')">Accept this exact replacement</button><button onclick="cancelReview('${x.key}')">Cancel</button></div></div></div>`;
+}
+function enableAccept(key){$(`accept-${safeId(key)}`).disabled=!$(`confirm-${safeId(key)}`).checked;}
+function cancelReview(key){state.candidate=null;render();}
+async function acceptCandidate(key){const c=state.candidate,x=state.links.find(v=>v.key===key),button=$(`accept-${safeId(key)}`),episode=$(`episode-${safeId(key)}`);if(!c||!$(`confirm-${safeId(key)}`).checked)return;button.disabled=true;button.textContent='Validating and applying…';try{const result=await request('/accept',{method:'POST',body:JSON.stringify({key,targetKind:c.kind,targetId:c.id,anidbEpisodeId:episode?Number(episode.value):null,confirmed:true})});toast(result.message);state.open=null;state.candidate=null;delete state.results[key];await load();}catch(e){toast(e.message,true);button.disabled=false;button.textContent='Accept this exact replacement';}}
+async function startScan(){try{await request('/scan',{method:'POST',body:'{}'});state.scan={running:true,total:state.links.length,completed:0};render();poll();}catch(e){toast(e.message,true);}}
+async function poll(){try{state.scan=await request('/scan');if(state.scan.running){render();setTimeout(poll,1000);}else{state.links=await request('/links');render();toast('TMDB link scan completed.');}}catch(e){toast(e.message,true);}}
+$('scan').addEventListener('click',startScan);$('filter').addEventListener('change',render);$('textFilter').addEventListener('input',render);load();
+</script>
+</body>
+</html>

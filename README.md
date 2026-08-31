@@ -7,6 +7,7 @@ Independent .NET 10 plugins for Shoko Daily.
 - [AniDB Watch History](Shoko.Plugin.AniDBWatchHistory/README.md) — imports watched dates from an AniDB MyList XML export.
 - [Movie Missing Filter](Shoko.Plugin.MovieMissingFilter/README.md) — configures Missing Episodes visibility and movie-layout filtering.
 - [NFO Generator](Shoko.Plugin.NfoGenerator/README.md) — generates Kodi-style NFO files and artwork sidecars.
+- [TMDB Link Fixer](Shoko.Plugin.TmdbLinkFixer/README.md) — checks and compares TMDB links, applying only replacements explicitly confirmed by an administrator.
 
 ## Credits
 
@@ -14,7 +15,7 @@ AniDB Watch History and Movie Missing Filter were created by AnimeNeko and are i
 
 ## Shoko manifests
 
-Add only the aggregate manifest in Shoko; it contains all three plugins:
+Add only the aggregate manifest in Shoko; it contains the released plugins:
 
 `https://raw.githubusercontent.com/Baine/Shoko.Plugins/main/manifest.json`
 
@@ -28,6 +29,9 @@ Run these commands from the repository root:
 
 # Movie Missing Filter
 ./Shoko.Plugin.MovieMissingFilter/build.sh
+
+# TMDB Link Fixer
+./Shoko.Plugin.TmdbLinkFixer/build.sh
 
 # NFO Generator
 dotnet build Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator.csproj -c Release
