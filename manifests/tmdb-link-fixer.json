@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.3",
+      "tag": "tmdb-link-fixer/v0.1.3",
+      "source_revision": "4f2d1f71b50e266df71a2d75d5eee9fe2f0419e9",
+      "released_at": "2026-08-31T13:43:45Z",
+      "channel": "Stable",
+      "release_notes": "## TMDB Link Fixer v0.1.3\n\nFixes \"Check all links\" appearing to do nothing.\n\n### What changed\n- \"Check all links\" now starts and tracks a scan. The page's request helper auto-retried on any `202` response, which was meant for the idempotent `/links` refresh. A `POST /scan` returns `202` when it successfully starts, so the auto-retry re-submitted the request and hit the \"scan already running\" guard (409), throwing and leaving the page looking idle — even though the scan was running server-side. The `202` retry is now limited to `GET` requests, so \"Check all links\" starts the scan and the page polls and shows progress (X / 8091 checked, valid/problem counts) until it finishes.\n\nNo behavior change to replacement safety: links are only changed after an administrator explicitly selects one exact candidate and confirms it.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.3/TmdbLinkFixer-v0.1.3_linux-arm64.zip",
+          "checksum": "0ed30363b0034e30606d4469b634f5eafc31f96aec3a5ad1c5fea14d6da2bfe9"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.3/TmdbLinkFixer-v0.1.3_linux-x64.zip",
+          "checksum": "5eef9a67f14e63989fe02a83aa6ef84bb696567ac00b2452745885381773d1e6"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.3/TmdbLinkFixer-v0.1.3_win-x64.zip",
+          "checksum": "4a9bf5200fb6e91a2e90ad576f92f6719df4989b169ff297f130ae5c0dddcd7d"
+        }
+      ]
+    },
+    {
       "version": "0.1.2",
       "tag": "tmdb-link-fixer/v0.1.2",
       "source_revision": "8cfdb45c485b0e202fdcb354bac6ddab09065110",
