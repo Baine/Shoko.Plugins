@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.1",
+      "tag": "tmdb-link-fixer/v0.1.1",
+      "source_revision": "bff53a3d0405f0872d1b2e3fdd531bf69fb09145",
+      "released_at": "2026-08-31T12:54:16Z",
+      "channel": "Stable",
+      "release_notes": "## TMDB Link Fixer v0.1.1\n\nFixes the embedded WebUI page so its admin-gated actions work, and removes the long first-page-load stall.\n\n### What changed\n- **Page now authenticates.** The plugin page previously sent no Shoko API key, so every action (`/links`, `/scan`, `/search`, `/accept`) returned HTTP 401 from the embedded WebUI and the page appeared dead. The page now reads the API key from the Shoko WebUI session (`localStorage['apiSession']`) and sends it as the `apikey` header on every request — the same mechanism Shoko's own WebUI uses. A clear notice is shown if no session is present.\n- **`/links` no longer blocks for minutes.** On a large library, building the full link list synchronously on the request thread took a very long time (minutes) and stalled the page. The snapshot is now built once in the background on first request, cached, and re-built when a scan or an accepted replacement changes the data. While the background build is in progress `/links` returns `202` and the page retries, so load is responsive.\n- **Scan button disabled while the list is still initializing**, so an early scan can't wipe the in-progress build.\n\nNo behavior change to replacement safety: links are only ever changed after an administrator explicitly selects one exact candidate and confirms it. A scan only compares and suggests.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.1/TmdbLinkFixer-v0.1.1_linux-arm64.zip",
+          "checksum": "9d7b2dfc432600317b99371112bee4327c59d7918baaf524542bc9ba1e66419f"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.1/TmdbLinkFixer-v0.1.1_linux-x64.zip",
+          "checksum": "5bd442aa6afb0d719738baec56a28df0cfb2eda4ac7a16e36b3ac7872aadd091"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.1/TmdbLinkFixer-v0.1.1_win-x64.zip",
+          "checksum": "5d475162b9629c7ca5acaf4b70188eaa2467ee458871ba4a0a5e1d2d2b9cbe31"
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "tag": "tmdb-link-fixer/v0.1.0",
       "source_revision": "825edf63e387546dc177ce84148721aad0ba7ccc",
