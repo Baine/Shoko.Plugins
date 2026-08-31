@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.2",
+      "tag": "tmdb-link-fixer/v0.1.2",
+      "source_revision": "8cfdb45c485b0e202fdcb354bac6ddab09065110",
+      "released_at": "2026-08-31T13:13:34Z",
+      "channel": "Stable",
+      "release_notes": "## TMDB Link Fixer v0.1.2\n\nFixes the plugin page showing `undefined` for every link after v0.1.1 unblocked the page's data load.\n\n### What changed\n- **Link cards render correctly again.** Shoko serializes plugin-API JSON as **PascalCase keys with enum values as integers** (its global Newtonsoft config ignores the model's string-enum converter). The page was reading camelCase string fields, so every card showed `undefined` for the series title, AniDB ID, and TMDB link details — only the count loaded.\n- The page's request helper now **normalizes every API response**: it lowercases the JSON keys to camelCase and maps the `Kind` / `RedirectKind` / `Health` enum integers back to their string labels (`Movie`/`Show`, `NotChecked`/`Valid`/…). This makes the summary counts and filters work too.\n- Validated against the real 8091-link library: no undefined fields, correct valid/problem counts.\n\nNo behavior change to replacement safety: links are only changed after an administrator explicitly selects one exact candidate and confirms it.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.2/TmdbLinkFixer-v0.1.2_linux-arm64.zip",
+          "checksum": "dcf252abb2ec5db98730af9e81ce4e1a9c3ae60190ea05984a1dea39fb93faf6"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.2/TmdbLinkFixer-v0.1.2_linux-x64.zip",
+          "checksum": "17e5cdebc81dc2233b75c291f880b66288fbbf07810eafd2e5fa69d585c6eca5"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.2/TmdbLinkFixer-v0.1.2_win-x64.zip",
+          "checksum": "e4d0a62ac3e0a8c2f4e94193fd6c3237715f9f0a51f0ce31d09c41a61416defa"
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "tag": "tmdb-link-fixer/v0.1.1",
       "source_revision": "bff53a3d0405f0872d1b2e3fdd531bf69fb09145",
