@@ -77,6 +77,19 @@ public sealed class TmdbLinkFixerController(TmdbLinkFixerService service, IUserS
         return Ok(await service.FindSuggestionsAsync(key, cancellationToken));
     }
 
+    [HttpGet("show-mapping")]
+    public async Task<ActionResult<ShowMappingOptions>> ShowMapping(
+        [FromQuery] string key,
+        [FromQuery] int targetId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (string.IsNullOrWhiteSpace(key)) return BadRequest("A link key is required.");
+        if (targetId <= 0) return BadRequest("A valid TMDB show ID is required.");
+        var result = await service.GetShowMappingOptionsAsync(key, targetId, cancellationToken);
+        return result is null ? NotFound("The source link or TMDB show could not be loaded.") : Ok(result);
+    }
+
     [HttpPost("accept")]
     public async Task<ActionResult<OperationResult>> Accept([FromBody] AcceptLinkRequest request, CancellationToken cancellationToken)
     {

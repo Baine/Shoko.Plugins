@@ -118,6 +118,65 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
         }
     }
 
+    public async Task<ShowMappingOptions?> GetShowMappingOptionsAsync(int showId, CancellationToken cancellationToken = default)
+    {
+        if (showId <= 0)
+            return null;
+
+        var settings = TmdbLinkFixerSettingsStore.Current;
+        if (string.IsNullOrWhiteSpace(settings.ApiCredential))
+            throw new InvalidOperationException("Configure a TMDB API key or read access token before loading episode mappings.");
+
+        var showResponse = await RequestJsonAsync($"tv/{showId}?language=en-US", settings, "show episode mapping", cancellationToken).ConfigureAwait(false);
+        if (showResponse.Element is null)
+            throw new InvalidOperationException(showResponse.Error ?? "The TMDB show could not be loaded.");
+
+        var show = showResponse.Element.Value;
+        var showTitle = GetString(show, "name") ?? GetString(show, "original_name") ?? $"TMDB show {showId}";
+        if (!show.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array)
+            return new(showId, showTitle, []);
+
+        var episodes = new List<TmdbEpisodeOption>();
+        foreach (var season in seasons.EnumerateArray().OrderBy(x => GetInt32(x, "season_number")))
+        {
+            var seasonNumber = GetInt32(season, "season_number");
+            if (seasonNumber is null || GetInt32(season, "episode_count") is not > 0)
+                continue;
+
+            var seasonResponse = await RequestJsonAsync(
+                $"tv/{showId}/season/{seasonNumber.Value}?language=en-US",
+                settings,
+                $"show season {seasonNumber.Value} episode mapping",
+                cancellationToken).ConfigureAwait(false);
+            if (seasonResponse.Element is null)
+                throw new InvalidOperationException(seasonResponse.Error ?? $"TMDB season {seasonNumber.Value} could not be loaded.");
+            if (!seasonResponse.Element.Value.TryGetProperty("episodes", out var seasonEpisodes) || seasonEpisodes.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var episode in seasonEpisodes.EnumerateArray())
+            {
+                var episodeId = GetInt32(episode, "id");
+                var episodeNumber = GetInt32(episode, "episode_number");
+                if (episodeId is null or <= 0 || episodeNumber is null or < 0)
+                    continue;
+                var title = GetString(episode, "name") ?? $"Episode {episodeNumber.Value}";
+                DateOnly? airDate = DateOnly.TryParse(GetString(episode, "air_date"), out var parsedDate) ? parsedDate : null;
+                episodes.Add(new(
+                    episodeId.Value,
+                    seasonNumber.Value,
+                    episodeNumber.Value,
+                    title,
+                    airDate,
+                    Still(GetString(episode, "still_path"))));
+            }
+        }
+
+        return new(showId, showTitle, episodes
+            .OrderBy(x => x.SeasonNumber)
+            .ThenBy(x => x.EpisodeNumber)
+            .ToList());
+    }
+
     private async Task<ApiEntityResult> RequestEntityAsync(
         TmdbMediaKind kind,
         int id,
@@ -216,6 +275,9 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
     private static string? Poster(string? path)
         => string.IsNullOrWhiteSpace(path) ? null : $"https://image.tmdb.org/t/p/w185{path}";
 
+    private static string? Still(string? path)
+        => string.IsNullOrWhiteSpace(path) ? null : $"https://image.tmdb.org/t/p/w300{path}";
+
     private static SearchResult? ParseSearchResult(TmdbMediaKind kind, JsonElement item)
     {
         if (!item.TryGetProperty("id", out var idElement) || !idElement.TryGetInt32(out var id) || id <= 0)
@@ -241,6 +303,56 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
             ? value.GetString()
             : null;
 
+    private static int? GetInt32(JsonElement item, string propertyName)
+        => item.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out var number)
+            ? number
+            : null;
+
+    private async Task<JsonApiResponse> RequestJsonAsync(
+        string route,
+        TmdbLinkFixerSettings settings,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        await WaitForRateSlotAsync(settings.RequestsPerSecond, cancellationToken).ConfigureAwait(false);
+        if (!TmdbLinkFixerSettingsStore.IsBearerToken(settings.ApiCredential))
+            route += $"{(route.Contains('?') ? "&" : "?")}api_key={Uri.EscapeDataString(settings.ApiCredential)}";
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            if (TmdbLinkFixerSettingsStore.IsBearerToken(settings.ApiCredential))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiCredential);
+            using var response = await clientFactory.CreateClient(HttpClientName)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                return JsonApiResponse.Failure("TMDB rejected the configured API credential.");
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retry = ClampRetryDelay(response.Headers.RetryAfter?.Delta);
+                logger.LogWarning("TMDB returned 429; pausing requests for {Delay}", retry);
+                await PauseAllRequestsAsync(retry, cancellationToken).ConfigureAwait(false);
+                return JsonApiResponse.Failure($"TMDB rate-limited the request. Requests were paused for {Math.Ceiling(retry.TotalSeconds)} seconds.");
+            }
+            if (!response.IsSuccessStatusCode)
+                return JsonApiResponse.Failure($"TMDB API request failed (HTTP {(int)response.StatusCode}).");
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return JsonApiResponse.Success(document.RootElement.Clone());
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return JsonApiResponse.Failure("The TMDB API request timed out.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException)
+        {
+            logger.LogWarning(ex, "TMDB API request failed while loading {Operation}", operation);
+            return JsonApiResponse.Failure("The TMDB API could not return readable episode data.");
+        }
+    }
+
     private static TimeSpan ClampRetryDelay(TimeSpan? retryAfter)
     {
         var retry = retryAfter ?? TimeSpan.FromSeconds(30);
@@ -258,6 +370,12 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
         public static ApiEntityResult Exists(string? posterUrl) => new(ApiEntityState.Exists, posterUrl, null, false);
         public static ApiEntityResult Missing() => new(ApiEntityState.Missing, null, null, false);
         public static ApiEntityResult Error(string message, bool fatal = false) => new(ApiEntityState.Error, null, message, fatal);
+    }
+
+    private sealed record JsonApiResponse(JsonElement? Element, string? Error)
+    {
+        public static JsonApiResponse Success(JsonElement element) => new(element, null);
+        public static JsonApiResponse Failure(string error) => new(null, error);
     }
 }
 

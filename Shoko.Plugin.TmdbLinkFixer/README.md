@@ -1,4 +1,4 @@
-# Shoko.Plugin.TmdbLinkFixer v0.1.5
+# Shoko.Plugin.TmdbLinkFixer v0.1.6
 
 Checks existing AniDB-to-TMDB movie and show links and provides an administrator-controlled correction workflow in Shoko.
 
@@ -13,6 +13,9 @@ Checks existing AniDB-to-TMDB movie and show links and provides an administrator
 - Shows AniDB, current TMDB, and proposed TMDB links together.
 - Shows the relevant poster when a link is hovered and a three-poster comparison before confirmation.
 - Supports candidates found through an alternate-type check, a user-triggered suggestion search, or a manual movie/show search.
+- Requires an explicit AniDB episode selection for movie targets and an explicit AniDB-to-TMDB episode mapping for show targets before final acceptance.
+- Allows an administrator to repair or edit the episode mapping of an existing TMDB show link without replacing the show link itself.
+- Groups multiple AniDB episodes that reference the same TMDB movie into one review card instead of listing the movie link once per episode.
 - Never accepts a candidate automatically. A replacement requires a final checkbox confirming the exact source and target IDs, followed by an explicit button click.
 
 ## Usage
@@ -25,8 +28,8 @@ After installation and a Shoko restart, open:
 2. Click **Check all links**. Enable **Ignore cached results** first only when a forced TMDB recheck is needed.
 3. Review an alternate-type result, request unverified match suggestions for one problematic link, or search manually.
 4. Inspect the AniDB, current TMDB, and proposed TMDB pages and posters.
-5. Select the AniDB episode when the proposed target is a movie.
-6. Confirm the exact IDs with the checkbox and click **Accept this exact replacement**.
+5. Open the episode-mapping dialog. Select one AniDB episode for a movie, or map AniDB episodes to exact TMDB season episodes for a show. The optional number-based helper fills only the visible form and does not save anything.
+6. Save the mapping review, confirm the exact IDs and episode mapping with the checkbox, and click **Accept this exact replacement**.
 
 Only Shoko administrators can read link data, search, or accept a replacement. The embedded page itself is public so Shoko can display it, but every data and write endpoint performs an admin check.
 
@@ -51,7 +54,9 @@ Manual replacement searches use the configured plugin API credential, explicitly
 
 Automatic match suggestions are requested only for one link after the administrator clicks **Find automatic suggestions**; they are not generated in bulk during a scan. Shoko's automatic matches are supplemented with a broad TMDB API title search because otherwise valid entries may have no Animation genre assigned at TMDB. These broad results are unverified suggestions. Search results, automatic suggestions, and alternate-type candidates are inert until an administrator completes the final comparison and confirmation.
 
-When a replacement is explicitly accepted, the plugin validates the exact target again, loads its metadata, adds it as a user-verified link, and only then removes the exact old link. TMDB show links use Shoko's normal episode matching behavior after the administrator has selected and accepted that show. The plugin never chooses or accepts a result by title similarity on its own.
+When a replacement is explicitly accepted, the plugin validates the exact target again and loads its metadata before changing any links. Movie targets are attached to the exact AniDB episode selected in the mapping dialog. Show targets require at least one explicit AniDB-to-TMDB episode mapping. After the new show link is added and the old link is removed, provisional automatic episode matches for the selected show are reset and only the mappings confirmed in the dialog are stored as user-verified links; unmapped episodes remain unlinked from that show. Confirmed episode mappings belonging to other TMDB shows are preserved. Existing show mappings can be edited through **Edit episode mapping** without replacing the show link. The plugin never chooses or accepts a result by title similarity or episode number on its own.
+
+When several episodes of one AniDB anime reference the same current TMDB movie, the review page represents them as one grouped source link. Accepting a replacement removes that exact old TMDB movie reference from every episode in the group. A replacement movie is still linked only to the single AniDB episode explicitly selected in the mapping dialog.
 
 ## Build
 

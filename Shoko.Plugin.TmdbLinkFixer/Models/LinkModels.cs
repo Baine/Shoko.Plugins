@@ -20,13 +20,34 @@ public enum LinkHealth
     Error,
 }
 
-public sealed record EpisodeOption(int AnidbEpisodeId, string Label);
+public sealed record EpisodeOption(
+    int AnidbEpisodeId,
+    string Label,
+    bool IsRegular,
+    int Number,
+    IReadOnlyList<int> CurrentTmdbEpisodeIds);
+
+public sealed record TmdbEpisodeOption(
+    int TmdbEpisodeId,
+    int SeasonNumber,
+    int EpisodeNumber,
+    string Title,
+    DateOnly? AirDate,
+    string? StillUrl);
+
+public sealed record ShowMappingOptions(
+    int TmdbShowId,
+    string ShowTitle,
+    IReadOnlyList<TmdbEpisodeOption> Episodes);
+
+public sealed record EpisodeMappingRequest(int AnidbEpisodeId, int TmdbEpisodeId);
 
 public sealed record TmdbLinkItem(
     string Key,
     int ShokoSeriesId,
     int AnidbAnimeId,
     int? AnidbEpisodeId,
+    IReadOnlyList<int> SourceAnidbEpisodeIds,
     string SeriesTitle,
     string? EpisodeTitle,
     string? EpisodeLabel,
@@ -74,6 +95,7 @@ public sealed class AcceptLinkRequest
     public required TmdbMediaKind TargetKind { get; init; }
     public int TargetId { get; init; }
     public int? AnidbEpisodeId { get; init; }
+    public IReadOnlyList<EpisodeMappingRequest> EpisodeMappings { get; init; } = [];
     public bool Confirmed { get; init; }
 }
 
