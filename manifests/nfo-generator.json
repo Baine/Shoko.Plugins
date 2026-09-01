@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.15",
+      "tag": "nfo-generator/v0.1.15",
+      "source_revision": "42d580944f3def32c2a9d1ba2df7138329623b87",
+      "released_at": "2026-09-01T07:14:22Z",
+      "channel": "Stable",
+      "release_notes": "## Changes\n\n- Replace the custom release metadata stamping with the official Shoko build metadata targets.\n- Preserve the established plugin identity while stamping runtime, release channel, release tag, date, and source revision consistently.\n\nThere are no changes to NFO generation, artwork, or cleanup behavior in this release.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.15/NfoGenerator-v0.1.15_linux-arm64.zip",
+          "checksum": "14e7c6e3b6707a6049e0d328762296586582cdbdcb2ff1e11229bec5c51d34bb"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.15/NfoGenerator-v0.1.15_linux-x64.zip",
+          "checksum": "175a4eb64789ce51f913ac3dbdc96c78064475ae9f06f6e43b8d09cdfd900dc5"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.15/NfoGenerator-v0.1.15_win-x64.zip",
+          "checksum": "bdfb77d7def6cbee4dd9ae75c1b71781d939dd6258902939ea5f72e7e0709cf7"
+        }
+      ]
+    },
+    {
       "version": "0.1.14",
       "tag": "nfo-generator/v0.1.14",
       "source_revision": "898830833c8b6f43b64df2834d3ec3fc00d175a8",
