@@ -21,7 +21,7 @@ public sealed class TmdbLinkFixerService(
     private readonly Dictionary<string, CheckedLink> _checks = new(StringComparer.Ordinal);
     private Task<List<LinkSnapshot>>? _snapshotTask;
     private Task? _scanTask;
-    private ScanState _scanState = new(false, 0, 0, 0, 0, 0, null, null);
+    private ScanState _scanState = new(false, 0, 0, 0, 0, 0, 0, null, null);
 
     public bool ApiCredentialConfigured => TmdbLinkFixerSettingsStore.IsConfigured;
 
@@ -51,14 +51,14 @@ public sealed class TmdbLinkFixerService(
             return _scanState;
     }
 
-    public bool StartScan()
+    public bool StartScan(bool ignoreCache = false)
     {
         lock (_gate)
         {
             if (_scanTask is { IsCompleted: false })
                 return false;
             _snapshotTask = null;
-            _scanTask = Task.Run(ScanAllAsync);
+            _scanTask = Task.Run(() => ScanAllAsync(ignoreCache));
             return true;
         }
     }
@@ -178,27 +178,36 @@ public sealed class TmdbLinkFixerService(
         }
     }
 
-    private async Task ScanAllAsync()
+    private async Task ScanAllAsync(bool ignoreCache)
     {
         var started = DateTimeOffset.UtcNow;
-        SetState(new(true, 0, 0, 0, 0, 0, started, null));
+        SetState(new(true, 0, 0, 0, 0, 0, 0, started, null));
 
         try
         {
             var links = BuildSnapshots();
-            SetState(new(true, links.Count, 0, 0, 0, 0, started, null));
+            SetState(new(true, links.Count, 0, 0, 0, 0, 0, started, null));
             var remoteChecks = new Dictionary<(TmdbMediaKind Kind, int Id), ProbeResult>();
             var completed = 0;
             var valid = 0;
             var problems = 0;
             var errors = 0;
+            var cached = 0;
 
             foreach (var link in links)
             {
                 SetCheck(link.Key, new(LinkHealth.Checking, null, null, null, null, null));
                 if (!remoteChecks.TryGetValue((link.Kind, link.TmdbId), out var result))
                 {
-                    result = await probe.ProbeAsync(link.Kind, link.TmdbId).ConfigureAwait(false);
+                    if (!ignoreCache && TmdbValidationCache.TryGet(link.Kind, link.TmdbId, out result, out _))
+                    {
+                        cached++;
+                    }
+                    else
+                    {
+                        result = await probe.ProbeAsync(link.Kind, link.TmdbId).ConfigureAwait(false);
+                        TmdbValidationCache.Store(link.Kind, link.TmdbId, result);
+                    }
                     remoteChecks[(link.Kind, link.TmdbId)] = result;
                 }
 
@@ -211,21 +220,25 @@ public sealed class TmdbLinkFixerService(
                 else problems++;
                 if (result.Fatal)
                 {
-                    SetState(new(false, links.Count, completed, valid, problems, errors, started, DateTimeOffset.UtcNow));
+                    SetState(new(false, links.Count, completed, valid, problems, errors, cached, started, DateTimeOffset.UtcNow));
                     logger.LogWarning("TMDB link scan stopped after a fatal API validation error: {Message}", result.Message);
                     return;
                 }
-                SetState(new(true, links.Count, completed, valid, problems, errors, started, null));
+                SetState(new(true, links.Count, completed, valid, problems, errors, cached, started, null));
             }
 
-            SetState(new(false, links.Count, completed, valid, problems, errors, started, DateTimeOffset.UtcNow));
-            logger.LogInformation("TMDB link scan completed: {Total} links, {Valid} valid, {Problems} problems, {Errors} errors", links.Count, valid, problems, errors);
+            SetState(new(false, links.Count, completed, valid, problems, errors, cached, started, DateTimeOffset.UtcNow));
+            logger.LogInformation("TMDB link scan completed: {Total} links, {Valid} valid, {Problems} problems, {Errors} errors, {Cached} cache hits", links.Count, valid, problems, errors, cached);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "TMDB link scan failed");
             var state = GetScanState();
             SetState(state with { Running = false, Errors = state.Errors + 1, FinishedAt = DateTimeOffset.UtcNow });
+        }
+        finally
+        {
+            TmdbValidationCache.Flush();
         }
     }
 
@@ -273,7 +286,10 @@ public sealed class TmdbLinkFixerService(
 
     private TmdbLinkItem ToItem(LinkSnapshot link)
     {
-        var check = _checks.GetValueOrDefault(link.Key) ?? new CheckedLink(LinkHealth.NotChecked, null, null, null, null, null);
+        var check = _checks.GetValueOrDefault(link.Key);
+        if (check is null && TmdbValidationCache.TryGet(link.Kind, link.TmdbId, out var cached, out var checkedAt))
+            check = new(cached.Health, cached.Message, cached.RedirectKind, cached.RedirectId, cached.RedirectPosterUrl, checkedAt);
+        check ??= new CheckedLink(LinkHealth.NotChecked, null, null, null, null, null);
         return new(link.Key, link.ShokoSeriesId, link.AnidbAnimeId, link.AnidbEpisodeId, link.SeriesTitle,
             link.EpisodeTitle, link.EpisodeLabel, $"https://anidb.net/anime/{link.AnidbAnimeId}", link.AnidbPosterUrl,
             link.Kind, link.TmdbId, TmdbLinkProbe.BuildUri(link.Kind, link.TmdbId).ToString(), link.OldPosterUrl,

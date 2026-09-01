@@ -51,6 +51,7 @@ public sealed record ScanState(
     int Valid,
     int Problems,
     int Errors,
+    int Cached,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt);
 

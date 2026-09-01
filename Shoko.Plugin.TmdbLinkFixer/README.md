@@ -6,6 +6,7 @@ Checks existing AniDB-to-TMDB movie and show links and provides an administrator
 
 - Scans every TMDB movie and show link without modifying it.
 - Validates links through the TMDB API instead of bulk-requesting public website pages.
+- Persists validation results for four days and provides an explicit cache-bypass option for forced rechecks.
 - Detects valid targets, missing targets, and an existing target in the alternate movie/TV namespace.
 - Provides user-triggered Shoko match suggestions plus a broad TMDB title search, and manual TMDB movie/show search from the review page.
 - Includes restricted/adult TMDB entries in searches so administrators can review legitimate adult matches.
@@ -21,7 +22,7 @@ After installation and a Shoko restart, open:
 `Settings -> Plugins -> TMDB Link Fixer -> TMDB Link Fixer`
 
 1. Enter a TMDB v3 API key or v4 read access token, select a rate from 1 to 10 requests/second, and save the API settings.
-2. Click **Check all links**.
+2. Click **Check all links**. Enable **Ignore cached results** first only when a forced TMDB recheck is needed.
 3. Review an alternate-type result, request unverified match suggestions for one problematic link, or search manually.
 4. Inspect the AniDB, current TMDB, and proposed TMDB pages and posters.
 5. Select the AniDB episode when the proposed target is a movie.
@@ -39,6 +40,8 @@ The scanner never bulk-requests public `themoviedb.org` pages. It calls the TMDB
 HTTP 200 means that the entity exists. HTTP 404 means that the entity is missing from that namespace. Only after a 404 does the scanner check the same numeric ID in the other namespace. Movie and TV IDs are separate namespaces, so an existing alternate ID is only an unverified candidate and may be a completely unrelated title.
 
 Current links are deduplicated by media type and TMDB ID before remote validation. Every unique `(movie|show, TMDB ID)` is requested once per scan even if several Shoko cross-references use it. Requests are evenly spaced and capped at 10 requests/second; the setting can be reduced as far as 1 request/second. At the default rate, 6,500 unique endpoint checks take at least about 10 minutes 50 seconds. Missing entries can take longer because the alternate media type is checked as a second request.
+
+Successful valid, missing, and alternate-type validation results are stored in `TmdbLinkFixer.validation-cache.json` and reused for four days, including across Shoko restarts. Transient network, authentication, server, and rate-limit errors are never cached. **Ignore cached results** bypasses all unexpired entries for that scan and replaces them with fresh responses; duplicate IDs are still requested only once during the forced scan.
 
 The scanner honors TMDB's `Retry-After` response after HTTP 429 and pauses for up to five minutes. Authentication failures stop the scan immediately instead of repeating a rejected credential across the library. See TMDB's [rate-limiting documentation](https://developer.themoviedb.org/docs/rate-limiting).
 

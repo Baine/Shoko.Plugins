@@ -41,12 +41,12 @@ public sealed class TmdbLinkFixerController(TmdbLinkFixerService service, IUserS
         => IsAdmin() ? Ok(service.GetScanState()) : Forbid();
 
     [HttpPost("scan")]
-    public IActionResult StartScan()
+    public IActionResult StartScan([FromQuery] bool ignoreCache = false)
     {
         if (!IsAdmin()) return Forbid();
         if (!service.ApiCredentialConfigured)
             return Conflict("Configure a TMDB API key or read access token before scanning.");
-        return service.StartScan() ? Accepted(service.GetScanState()) : Conflict("A scan is already running.");
+        return service.StartScan(ignoreCache) ? Accepted(service.GetScanState()) : Conflict("A scan is already running.");
     }
 
     [HttpGet("settings")]

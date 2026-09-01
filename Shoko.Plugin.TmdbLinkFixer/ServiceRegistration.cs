@@ -11,6 +11,7 @@ public sealed class ServiceRegistration : IPluginServiceRegistration
     public static void RegisterServices(IServiceCollection services, IApplicationPaths applicationPaths)
     {
         TmdbLinkFixerSettingsStore.Initialize(applicationPaths, NullLogger.Instance);
+        TmdbValidationCache.Initialize(applicationPaths, NullLogger.Instance);
         services.AddHttpClient(TmdbLinkProbe.HttpClientName, client =>
         {
             client.BaseAddress = new Uri("https://api.themoviedb.org/3/");

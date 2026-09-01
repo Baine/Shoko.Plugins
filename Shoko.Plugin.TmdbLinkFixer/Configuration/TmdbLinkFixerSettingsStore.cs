@@ -28,7 +28,7 @@ public static class TmdbLinkFixerSettingsStore
         lock (Sync)
         {
             _logger = logger;
-            _settingsPath = ResolveSettingsPath(applicationPaths);
+            _settingsPath = ResolvePluginFilePath(applicationPaths, SettingsFileName);
             LoadLocked();
         }
     }
@@ -123,7 +123,7 @@ public static class TmdbLinkFixerSettingsStore
         TryRestrictPermissions(_settingsPath);
     }
 
-    private static void TryRestrictPermissions(string path)
+    internal static void TryRestrictPermissions(string path)
     {
         if (OperatingSystem.IsWindows())
             return;
@@ -131,7 +131,7 @@ public static class TmdbLinkFixerSettingsStore
         catch (Exception ex) { _logger?.LogDebug(ex, "Could not restrict permissions on {Path}", path); }
     }
 
-    private static string ResolveSettingsPath(object applicationPaths)
+    internal static string ResolvePluginFilePath(object applicationPaths, string fileName)
     {
         foreach (var propertyName in new[] { "PluginConfigurationsPath", "ConfigurationPath", "DataPath", "ProgramDataPath", "ApplicationDataPath" })
         {
@@ -142,12 +142,12 @@ public static class TmdbLinkFixerSettingsStore
                 var root = File.Exists(value) || (!Directory.Exists(value) && Path.HasExtension(value))
                     ? Path.GetDirectoryName(value) ?? value
                     : value;
-                return Path.Combine(root, "TmdbLinkFixer", SettingsFileName);
+                return Path.Combine(root, "TmdbLinkFixer", fileName);
             }
             catch { }
         }
 
         var assemblyDirectory = Path.GetDirectoryName(typeof(TmdbLinkFixerSettingsStore).Assembly.Location) ?? AppContext.BaseDirectory;
-        return Path.Combine(assemblyDirectory, SettingsFileName);
+        return Path.Combine(assemblyDirectory, fileName);
     }
 }
