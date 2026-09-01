@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.6",
+      "tag": "tmdb-link-fixer/v0.1.6",
+      "source_revision": "c16a5908948ff8d78b93e21b9d74e2a97a36c311",
+      "released_at": "2026-09-01T10:54:22Z",
+      "channel": "Stable",
+      "release_notes": "Adds explicit AniDB-to-TMDB episode mapping before a manually confirmed replacement. Existing show mappings can be repaired without replacing the show link. Multiple AniDB episodes linked to the same TMDB movie or special are grouped for review, while all replacements remain strictly manual.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.6/TmdbLinkFixer-v0.1.6_linux-arm64.zip",
+          "checksum": "f3f800ea42810e3bd7ea9c9598a06a1a518976f2036e62cbdb1e250fd1bddaf9"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.6/TmdbLinkFixer-v0.1.6_linux-x64.zip",
+          "checksum": "a259c5982421ac5111762d3680644ab334f869bf9790a3f87f9442e5a490e85a"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.6/TmdbLinkFixer-v0.1.6_win-x64.zip",
+          "checksum": "bded732a9f40f3d082bed39b6cf320c3bc2264d6db327de5bb6ef2f9bd1c63bb"
+        }
+      ]
+    },
+    {
       "version": "0.1.5",
       "tag": "tmdb-link-fixer/v0.1.5",
       "source_revision": "45288060ec25d1da85ee0110b550f23c3a3f6a5b",
