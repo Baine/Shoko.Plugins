@@ -13,6 +13,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "1.0.6",
+      "tag": "anidb-watch-history/v1.0.6",
+      "source_revision": "5b88ed6ae83ff0250a367d182ddd1c80390f9e16",
+      "released_at": "2026-09-01T07:12:55Z",
+      "channel": "Stable",
+      "release_notes": "## Changes\n\n- Adopt the official Shoko build metadata targets.\n- Stamp plugin identity, runtime, release channel, release tag, date, and source revision consistently so Shoko can match the installed plugin to its manifest release.\n\nThere are no changes to watch-history import behavior in this release.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.6/AniDBWatchHistory-v1.0.6_linux-arm64.zip",
+          "checksum": "ed34b006b452008b5bb720ceb384759ba51e9f1bb76983447e9f55ac629d78fd"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.6/AniDBWatchHistory-v1.0.6_linux-x64.zip",
+          "checksum": "9b284743ccd8244acf051fba0866e584b7edfc9010e19ea62364e0b28e2d0ff3"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.6/AniDBWatchHistory-v1.0.6_win-x64.zip",
+          "checksum": "1477ee4d6563c6142c2288d7c3f1d70823d05da3d0bfc7a7c0dcf62040d4cae6"
+        }
+      ]
+    },
+    {
       "version": "1.0.5",
       "tag": "anidb-watch-history/v1.0.5",
       "source_revision": "e4379aa72e58591d603e856ea07e2faf830b2118",
