@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Shoko.Plugin.AniDBWatchHistory</AssemblyName>
     <RootNamespace>Shoko.Plugin.AniDBWatchHistory</RootNamespace>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <Authors>Fioon</Authors>
     <Description>Imports watched dates from an AniDB MyList XML export into Shoko Daily.</Description>
     <ShokoServerRoot Condition="'$(ShokoServerRoot)' == ''">../ShokoServer</ShokoServerRoot>
@@ -19,6 +19,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="$(ShokoServerRoot)/Shoko.Abstractions/Shoko.Abstractions.csproj"
                       Private="false" />
+    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.2.1" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,7 +28,6 @@
     <AssemblyMetadata Include="PackageName" Value="AniDB Watch History Import" />
     <AssemblyMetadata Include="PackageOverview" Value="Imports watched dates from AniDB MyList XML into Shoko's configured AniDB user." />
     <AssemblyMetadata Include="PackageTags" Value="anidb,watch-history,import" />
-    <AssemblyMetadata Include="RuntimeIdentifier" Value="any" />
   </ItemGroup>
 
   <Target Name="CheckShokoSource" BeforeTargets="ResolveProjectReferences"

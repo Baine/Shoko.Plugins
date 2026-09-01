@@ -1,4 +1,4 @@
-# Shoko.Plugin.TmdbLinkFixer v0.1.4
+# Shoko.Plugin.TmdbLinkFixer v0.1.5
 
 Checks existing AniDB-to-TMDB movie and show links and provides an administrator-controlled correction workflow in Shoko.
 

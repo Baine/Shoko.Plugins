@@ -32,6 +32,8 @@ Version 1.0.4 replaces the browser `confirm()` dialog with an in-page confirmati
 
 Version 1.0.5 adds an explicit EID fallback for historical FIDs that are not present in Shoko and verifies every persisted watched status before counting it as imported. Exact FID matching remains the default.
 
+Version 1.0.6 adds complete Shoko package identity metadata to release builds so the plugin manager can match an installed DLL to its manifest release.
+
 ## Build
 
 Requirements: the .NET SDK used by the checked-out Shoko Daily source (currently .NET 10).

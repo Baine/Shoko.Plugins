@@ -90,7 +90,8 @@ jobs:
         shell: bash
         env:
           PUBLISH_DIR: ${{ runner.temp }}/nfo-generator/${{ matrix.rid }}
-          RELEASE_CHANNEL: ${{ github.event.release.prerelease && 'Dev' || 'Stable' }}
+          ReleaseChannel: ${{ github.event.release.prerelease && 'Dev' || 'Stable' }}
+          ReleaseTag: ${{ github.event.release.tag_name }}
         run: |
           rm -rf "$PUBLISH_DIR"
           mkdir -p "$PUBLISH_DIR"

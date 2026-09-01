@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>Shoko.Plugin.MovieMissingFilter</AssemblyName>
     <RootNamespace>Shoko.Plugin.MovieMissingFilter</RootNamespace>
-    <Version>0.12.0</Version>
+    <Version>0.12.1</Version>
     <Authors>MovieMissingFilter</Authors>
     <Description>Configurable runtime enhancement for Shoko Missing Episodes with independent E/S/O visibility, redundant movie-layout suppression, and aligned dashboard/series-detail counters without modifying Shoko or its database.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -20,6 +20,7 @@
     <AssemblyMetadata Include="PackageOverview" Value="Configurable Missing Episodes filter with independent Normal (E), Special (S), and Other (O) visibility, redundant movie-layout suppression, and aligned counters without modifying Shoko or its database." />
     <AssemblyMetadata Include="PackageTags" Value="missing-episodes,movie,anidb" />
     <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.81" ExcludeAssets="runtime" />
+    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.2.1" PrivateAssets="all" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
   </ItemGroup>
 </Project>

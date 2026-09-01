@@ -56,16 +56,12 @@ serialization/compare logic.
   `force: true` bypasses.
 - **Embedded identity metadata**: Shoko reads `AssemblyMetadata` attributes off
   the plugin DLL (`PackageID`, `PackageName`, `PackageOverview`,
-  `RuntimeIdentifier`, `ReleaseChannel`, `ReleaseDate`, `SourceRevision`,
-  `ReleaseTag`, `RepositoryUrl`). Without `PackageID` it warns
-  "Plugin does not have embedded identity metadata". The csproj stamps the
-  static identity via `<AssemblyMetadata>` items and git provenance via the
-  `StampGitMetadata` target (mirrors ShokoRelay). **Gotcha**: the target must
-  hook `BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo"` — hooking
-  `CoreGenerateAssemblyInfo` is too late, the SDK has already captured
-  `@(AssemblyMetadata)`. `RuntimeIdentifier` and `ReleaseChannel` are
-  conditional on `$(RuntimeIdentifier)` / `$(RELEASE_CHANNEL)`, which the
-  workflow's Publish step sets.
+  `RuntimeIdentifier`, `ReleaseChannel`, `ReleaseDate`, `SourceRevision`, and
+  `ReleaseTag`). Without `PackageID` it warns "Plugin does not have embedded
+  identity metadata". The csproj keeps the static package identity and uses
+  the official `Shoko.BuildTools.Targets` package for git provenance, runtime,
+  and channel metadata. Release workflows provide `ReleaseChannel`; `dotnet
+  publish -r` provides the archive-specific runtime identifier.
 
 ## Caveats & observations
 

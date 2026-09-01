@@ -32,5 +32,6 @@ dotnet run --project Shoko.Plugin.NfoGenerator/tools/NfoGenerator.SelfCheck/NfoG
 ## Shoko integration constraints
 
 - Shoko supplies `Shoko.Abstractions` at runtime. Do not copy it with AniDB Watch History, and preserve `ExcludeAssets="runtime"` on the other plugins' server-owned package references.
+- All plugin projects use the official `Shoko.BuildTools.Targets` package to stamp source revision, release date, runtime identifier, and release channel into published DLLs. `Directory.Build.targets` supplies the repository's prefixed release tag and prevents the package from treating the root aggregate manifest as a single-plugin manifest. Preserve this metadata so Shoko can match installed plugins to manifest releases.
 - Movie Missing Filter's Harmony targets are reflection-based against Shoko Daily internals. Keep `Patching/PatchBootstrap.cs` fail-safe: unavailable or incompatible targets must leave Shoko's native behavior intact.
 - Release workflows publish ZIPs for `linux-arm64`, `linux-x64`, and `win-x64`, then update only their matching `manifests/<plugin>.json`. Do not hand-edit any manifest `releases` array.

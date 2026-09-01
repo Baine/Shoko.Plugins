@@ -97,6 +97,8 @@ jobs:
         shell: bash
         env:
           PUBLISH_DIR: ${{ runner.temp }}/anidb-watch-history/${{ matrix.rid }}
+          ReleaseChannel: ${{ github.event.release.prerelease && 'Dev' || 'Stable' }}
+          ReleaseTag: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           rm -rf "$PUBLISH_DIR"

@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Shoko.BuildTools.Targets expects a nearby manifest.json to describe one
+    plugin. This repository's root manifest.json is instead an aggregate of
+    references to manifests/*.json, while each project already embeds its
+    static package identity. Disable the incompatible manifest reader and the
+    source-identity fallback (which cannot reliably resolve every existing GUID
+    expression); keep the official runtime, release-channel, and git-provenance
+    targets.
+  -->
+  <Target Name="_ShokoStampManifestMetadata" Condition="false" />
+  <Target Name="_ShokoReadPluginIdentityFromSource" Condition="false" />
+
+  <!-- BuildTools currently recognizes only unprefixed vX.Y.Z tags. -->
+  <ItemGroup Condition="'$(ReleaseTag)' != ''">
+    <AssemblyMetadata Include="ReleaseTag" Value="$(ReleaseTag)" />
+  </ItemGroup>
+</Project>
