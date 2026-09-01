@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.5",
+      "tag": "tmdb-link-fixer/v0.1.5",
+      "source_revision": "45288060ec25d1da85ee0110b550f23c3a3f6a5b",
+      "released_at": "2026-09-01T07:09:05Z",
+      "channel": "Stable",
+      "release_notes": "## Changes\n\n- Use the configured plugin TMDB credential for manual movie and show searches.\n- Include restricted/adult TMDB results so legitimate matches such as adult titles can be reviewed.\n- Supplement Shoko's animation-filtered automatic matches with a broad, unverified TMDB title search.\n- Keep movie and show search results independent when one TMDB endpoint temporarily fails.\n- Persist valid, missing, and alternate-type validation responses for four days to avoid repeated checks.\n- Add an explicit **Ignore cached results** option for forced revalidation.\n- Show an explanatory message for empty searches instead of an empty result area.\n- Stamp official Shoko plugin identity, runtime, channel, tag, and source metadata in release archives.\n\nNo links are replaced automatically. Every candidate remains inert until an administrator reviews the exact AniDB and TMDB IDs, checks the confirmation box, and explicitly accepts it.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.5/TmdbLinkFixer-v0.1.5_linux-arm64.zip",
+          "checksum": "23926717bcc8e3e034173a319883f9423853debd4cb5f71f8a1033365a6ced38"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.5/TmdbLinkFixer-v0.1.5_linux-x64.zip",
+          "checksum": "abc2c52c0a56e0331ed540485bbce4eb5b4f0ceba5665fbf350271002194c5f2"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.5/TmdbLinkFixer-v0.1.5_win-x64.zip",
+          "checksum": "73bcdbce2e23ff6d2393a388edceaf9ff1d6c7e57428cc96cf9d640bebad145a"
+        }
+      ]
+    },
+    {
       "version": "0.1.4",
       "tag": "tmdb-link-fixer/v0.1.4",
       "source_revision": "fb21afe9ae1d41902bbdb1fc4461c2be4a7d8aba",
