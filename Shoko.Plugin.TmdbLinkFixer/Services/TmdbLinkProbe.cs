@@ -48,6 +48,76 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
     public static Uri BuildUri(TmdbMediaKind kind, int id)
         => new($"https://www.themoviedb.org/{(kind == TmdbMediaKind.Movie ? "movie" : "tv")}/{id}");
 
+    public async Task<TmdbSearchResponse> SearchAsync(
+        TmdbMediaKind kind,
+        string query,
+        int maximumResults = 8,
+        CancellationToken cancellationToken = default)
+    {
+        query = query.Trim();
+        if (query.Length < 2)
+            return TmdbSearchResponse.Success([]);
+
+        var settings = TmdbLinkFixerSettingsStore.Current;
+        if (string.IsNullOrWhiteSpace(settings.ApiCredential))
+            return TmdbSearchResponse.Failure("Configure a TMDB API key or read access token before searching.");
+
+        await WaitForRateSlotAsync(settings.RequestsPerSecond, cancellationToken).ConfigureAwait(false);
+        var route = $"search/{(kind == TmdbMediaKind.Movie ? "movie" : "tv")}?query={Uri.EscapeDataString(query)}&include_adult=true&language=en-US&page=1";
+        if (!TmdbLinkFixerSettingsStore.IsBearerToken(settings.ApiCredential))
+            route += $"&api_key={Uri.EscapeDataString(settings.ApiCredential)}";
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            if (TmdbLinkFixerSettingsStore.IsBearerToken(settings.ApiCredential))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiCredential);
+            using var response = await clientFactory.CreateClient(HttpClientName)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                return TmdbSearchResponse.Failure("TMDB rejected the configured API credential.");
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retry = ClampRetryDelay(response.Headers.RetryAfter?.Delta);
+                logger.LogWarning("TMDB returned 429; pausing search and validation requests for {Delay}", retry);
+                await PauseAllRequestsAsync(retry, cancellationToken).ConfigureAwait(false);
+                return TmdbSearchResponse.Failure($"TMDB rate-limited the search. Requests were paused for {Math.Ceiling(retry.TotalSeconds)} seconds.");
+            }
+            if ((int)response.StatusCode >= 500)
+                return TmdbSearchResponse.Failure($"TMDB is temporarily unavailable (HTTP {(int)response.StatusCode}).");
+            if (!response.IsSuccessStatusCode)
+                return TmdbSearchResponse.Failure($"TMDB API search failed (HTTP {(int)response.StatusCode}).");
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!document.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                return TmdbSearchResponse.Failure("TMDB returned an unreadable search response.");
+
+            var parsed = results.EnumerateArray()
+                .Select(item => ParseSearchResult(kind, item))
+                .OfType<SearchResult>()
+                .Take(Math.Clamp(maximumResults, 1, 20))
+                .ToList();
+            return TmdbSearchResponse.Success(parsed);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return TmdbSearchResponse.Failure("The TMDB API search timed out.");
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "TMDB API search failed for {Kind} query {Query}", kind, query);
+            return TmdbSearchResponse.Failure("The TMDB API could not be reached.");
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "TMDB API returned invalid search JSON for {Kind} query {Query}", kind, query);
+            return TmdbSearchResponse.Failure("TMDB returned an unreadable search response.");
+        }
+    }
+
     private async Task<ApiEntityResult> RequestEntityAsync(
         TmdbMediaKind kind,
         int id,
@@ -74,9 +144,7 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
                 return ApiEntityResult.Error("TMDB rejected the configured API credential.", fatal: true);
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                var retry = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
-                if (retry < TimeSpan.FromSeconds(1)) retry = TimeSpan.FromSeconds(1);
-                if (retry > TimeSpan.FromMinutes(5)) retry = TimeSpan.FromMinutes(5);
+                var retry = ClampRetryDelay(response.Headers.RetryAfter?.Delta);
                 logger.LogWarning("TMDB returned 429; pausing validation requests for {Delay}", retry);
                 await PauseAllRequestsAsync(retry, cancellationToken).ConfigureAwait(false);
                 return ApiEntityResult.Error($"TMDB rate-limited the request. Validation paused for {Math.Ceiling(retry.TotalSeconds)} seconds; lower the configured request rate if this repeats.");
@@ -148,6 +216,39 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
     private static string? Poster(string? path)
         => string.IsNullOrWhiteSpace(path) ? null : $"https://image.tmdb.org/t/p/w185{path}";
 
+    private static SearchResult? ParseSearchResult(TmdbMediaKind kind, JsonElement item)
+    {
+        if (!item.TryGetProperty("id", out var idElement) || !idElement.TryGetInt32(out var id) || id <= 0)
+            return null;
+
+        var titleProperty = kind == TmdbMediaKind.Movie ? "title" : "name";
+        var originalTitleProperty = kind == TmdbMediaKind.Movie ? "original_title" : "original_name";
+        var dateProperty = kind == TmdbMediaKind.Movie ? "release_date" : "first_air_date";
+        var title = GetString(item, titleProperty) ?? GetString(item, originalTitleProperty) ?? $"TMDB {id}";
+        var originalTitle = GetString(item, originalTitleProperty) ?? title;
+        var posterPath = GetString(item, "poster_path");
+        var overview = GetString(item, "overview") ?? string.Empty;
+        var rating = item.TryGetProperty("vote_average", out var ratingElement) && ratingElement.TryGetDouble(out var value)
+            ? value
+            : 0;
+        DateOnly? date = DateOnly.TryParse(GetString(item, dateProperty), out var parsedDate) ? parsedDate : null;
+
+        return new SearchResult(kind, id, title, originalTitle, date, Poster(posterPath), overview, rating, BuildUri(kind, id).ToString());
+    }
+
+    private static string? GetString(JsonElement item, string propertyName)
+        => item.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static TimeSpan ClampRetryDelay(TimeSpan? retryAfter)
+    {
+        var retry = retryAfter ?? TimeSpan.FromSeconds(30);
+        if (retry < TimeSpan.FromSeconds(1)) retry = TimeSpan.FromSeconds(1);
+        if (retry > TimeSpan.FromMinutes(5)) retry = TimeSpan.FromMinutes(5);
+        return retry;
+    }
+
     private static string KindLabel(TmdbMediaKind kind) => kind == TmdbMediaKind.Movie ? "movie" : "show";
 
     private enum ApiEntityState { Exists, Missing, Error }
@@ -158,6 +259,12 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
         public static ApiEntityResult Missing() => new(ApiEntityState.Missing, null, null, false);
         public static ApiEntityResult Error(string message, bool fatal = false) => new(ApiEntityState.Error, null, message, fatal);
     }
+}
+
+public sealed record TmdbSearchResponse(IReadOnlyList<SearchResult> Results, string? Error)
+{
+    public static TmdbSearchResponse Success(IReadOnlyList<SearchResult> results) => new(results, null);
+    public static TmdbSearchResponse Failure(string error) => new([], error);
 }
 
 public sealed record ProbeResult(LinkHealth Health, string? Message, TmdbMediaKind? RedirectKind, int? RedirectId, string? RedirectPosterUrl, bool Fatal)

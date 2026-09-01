@@ -69,19 +69,23 @@ public sealed class TmdbLinkFixerService(
         if (query.Length < 2)
             return [];
 
-        var movieTask = searchService.SearchMovies(query, pageSize: 8);
-        var showTask = searchService.SearchShows(query, pageSize: 8);
+        var movieTask = probe.SearchAsync(TmdbMediaKind.Movie, query, cancellationToken: cancellationToken);
+        var showTask = probe.SearchAsync(TmdbMediaKind.Show, query, cancellationToken: cancellationToken);
         await Task.WhenAll(movieTask, showTask).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var movies = movieTask.Result.Page.Select(x => new SearchResult(
-            TmdbMediaKind.Movie, x.ID, x.Title, x.OriginalTitle, x.ReleasedAt,
-            Poster(x.PosterPath), x.Overview, (double)x.UserRating,
-            TmdbLinkProbe.BuildUri(TmdbMediaKind.Movie, x.ID).ToString()));
-        var shows = showTask.Result.Page.Select(x => new SearchResult(
-            TmdbMediaKind.Show, x.ID, x.Title, x.OriginalTitle, x.FirstAiredAt,
-            Poster(x.PosterPath), x.Overview, (double)x.UserRating,
-            TmdbLinkProbe.BuildUri(TmdbMediaKind.Show, x.ID).ToString()));
-        return movies.Concat(shows).OrderByDescending(x => x.Rating).ThenBy(x => x.Title).ToList();
+        var movieResponse = movieTask.Result;
+        var showResponse = showTask.Result;
+        if (movieResponse.Error is not null)
+            logger.LogWarning("Manual TMDB movie search failed: {Error}", movieResponse.Error);
+        if (showResponse.Error is not null)
+            logger.LogWarning("Manual TMDB show search failed: {Error}", showResponse.Error);
+        if (movieResponse.Error is not null && showResponse.Error is not null)
+            throw new InvalidOperationException($"TMDB search failed. Movie search: {movieResponse.Error} Show search: {showResponse.Error}");
+
+        return movieResponse.Results.Concat(showResponse.Results)
+            .OrderByDescending(x => x.Rating)
+            .ThenBy(x => x.Title)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<SearchResult>> FindSuggestionsAsync(string key, CancellationToken cancellationToken)
@@ -89,7 +93,7 @@ public sealed class TmdbLinkFixerService(
         var source = BuildSnapshots().SingleOrDefault(x => x.Key == key);
         if (source is null)
             return [];
-        return await FindAutomaticCandidatesAsync(source.AnidbAnimeId, cancellationToken).ConfigureAwait(false);
+        return await FindAutomaticCandidatesAsync(source, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<OperationResult> AcceptAsync(AcceptLinkRequest request, CancellationToken cancellationToken)
@@ -277,20 +281,19 @@ public sealed class TmdbLinkFixerService(
             link.Episodes);
     }
 
-    private async Task<IReadOnlyList<SearchResult>> FindAutomaticCandidatesAsync(int anidbAnimeId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<SearchResult>> FindAutomaticCandidatesAsync(LinkSnapshot source, CancellationToken cancellationToken)
     {
-        var series = metadataService.GetShokoSeriesByAnidbID(anidbAnimeId);
+        var series = metadataService.GetShokoSeriesByAnidbID(source.AnidbAnimeId);
         if (series is null)
             return [];
 
+        var candidates = new List<SearchResult>();
         try
         {
             var results = await searchService.SearchForAutoMatch(series.AnidbAnime).WaitAsync(cancellationToken).ConfigureAwait(false);
-            return results.Select(x => x.IsMovie
+            candidates.AddRange(results.Select(x => x.IsMovie
                     ? ToSearchResult(x.TmdbMovie!, x.AnidbEpisode?.ID, x.MatchRating.ToString())
-                    : ToSearchResult(x.TmdbShow!, x.MatchRating.ToString()))
-                .DistinctBy(x => (x.Kind, x.Id, x.AnidbEpisodeId))
-                .ToList();
+                    : ToSearchResult(x.TmdbShow!, x.MatchRating.ToString())));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -298,9 +301,30 @@ public sealed class TmdbLinkFixerService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Automatic TMDB candidate search failed for AniDB anime {AnimeId}", anidbAnimeId);
-            return [];
+            logger.LogWarning(ex, "Shoko automatic TMDB candidate search failed for AniDB anime {AnimeId}", source.AnidbAnimeId);
         }
+
+        // Shoko's automatic matcher intentionally filters candidates to the Animation genre.
+        // A broad, inert title search is added here because TMDB entries can be missing genre
+        // metadata. It includes adult results and still requires explicit administrator review.
+        try
+        {
+            var broadResults = await SearchAsync(source.SeriesTitle, cancellationToken).ConfigureAwait(false);
+            candidates.AddRange(broadResults.Select(x => x with { MatchReason = "Broad title search (adult results included)" }));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Keep any candidates returned by Shoko even when the supplemental API search fails.
+            logger.LogWarning(ex, "Broad TMDB candidate search failed for AniDB anime {AnimeId}", source.AnidbAnimeId);
+        }
+
+        return candidates
+            .DistinctBy(x => (x.Kind, x.Id, x.AnidbEpisodeId))
+            .ToList();
     }
 
     private static SearchResult ToSearchResult(ITmdbMovieSearchResult movie, int? anidbEpisodeId, string matchReason)

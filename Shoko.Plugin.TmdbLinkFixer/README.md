@@ -7,7 +7,8 @@ Checks existing AniDB-to-TMDB movie and show links and provides an administrator
 - Scans every TMDB movie and show link without modifying it.
 - Validates links through the TMDB API instead of bulk-requesting public website pages.
 - Detects valid targets, missing targets, and an existing target in the alternate movie/TV namespace.
-- Provides user-triggered Shoko match suggestions and manual TMDB movie/show search from the review page.
+- Provides user-triggered Shoko match suggestions plus a broad TMDB title search, and manual TMDB movie/show search from the review page.
+- Includes restricted/adult TMDB entries in searches so administrators can review legitimate adult matches.
 - Shows AniDB, current TMDB, and proposed TMDB links together.
 - Shows the relevant poster when a link is hovered and a three-poster comparison before confirmation.
 - Supports candidates found through an alternate-type check, a user-triggered suggestion search, or a manual movie/show search.
@@ -43,7 +44,9 @@ The scanner honors TMDB's `Retry-After` response after HTTP 429 and pauses for u
 
 The API credential is stored in `TmdbLinkFixer.settings.json` under Shoko's configuration area. It is never returned to the browser after saving, and the plugin restricts the file to the Shoko process user on Unix-like systems where supported. Clearing the credential disables scanning. Both a TMDB v3 API key and a v4 read access token are supported.
 
-Replacement searches use Shoko's existing TMDB search service. Automatic match suggestions are requested only for one link after the administrator clicks **Find automatic suggestions**; they are not generated in bulk during a scan. Search results, automatic suggestions, and alternate-type candidates are inert until an administrator completes the final comparison and confirmation.
+Manual replacement searches use the configured plugin API credential, explicitly include adult results, and share the validation request throttle. Movie and show searches are handled independently, so a temporary failure in one media type does not hide results returned for the other.
+
+Automatic match suggestions are requested only for one link after the administrator clicks **Find automatic suggestions**; they are not generated in bulk during a scan. Shoko's automatic matches are supplemented with a broad TMDB API title search because otherwise valid entries may have no Animation genre assigned at TMDB. These broad results are unverified suggestions. Search results, automatic suggestions, and alternate-type candidates are inert until an administrator completes the final comparison and confirmation.
 
 When a replacement is explicitly accepted, the plugin validates the exact target again, loads its metadata, adds it as a user-verified link, and only then removes the exact old link. TMDB show links use Shoko's normal episode matching behavior after the administrator has selected and accepted that show. The plugin never chooses or accepts a result by title similarity on its own.
 
@@ -66,6 +69,6 @@ Copy the contents of `Shoko.Plugin.TmdbLinkFixer/dist/` into the Shoko plugin di
 ## Limitations
 
 - A temporary TMDB network, rate-limit, or server error is reported as **Check failed**, never as an invalid link.
-- The 10 requests/second setting applies to validation performed by this plugin. Shoko's search service may have its own request handling.
+- The 10 requests/second setting applies to validation and direct TMDB searches performed by this plugin. Shoko's additional automatic match search may have its own request handling.
 - The scanner validates the linked movie/show entity. It does not individually validate every generated TMDB episode cross-reference.
 - If Shoko fails after adding the new link but before removing the old one, both links may remain. Refresh the page and inspect the Shoko log; the plugin reports this partial-failure case rather than guessing what to delete.
