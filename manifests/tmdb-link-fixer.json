@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.7",
+      "tag": "tmdb-link-fixer/v0.1.7",
+      "source_revision": "6a61111b0c79839637e64c61fa5c0ae6dad84d0d",
+      "released_at": "2026-09-04T08:57:10Z",
+      "channel": "Stable",
+      "release_notes": "Show replacement flow hardening:\n- The old show link is removed before the replacement is added, so a failed accept can no longer leave both links attached to the anime.\n- Confirmed episode mappings are read back after saving; the operation now fails with the exact missing AniDB to TMDB pairs instead of reporting success.\n- Preserved episode mappings for other shows are validated against TMDB episode rows that still exist in Shoko. Orphaned references (the episode was removed from TMDB and purged) are dropped with a log entry instead of aborting the accept mid-way.\n- A linked show or movie that no longer exists on TMDB is no longer suggested as a same-ID alternate media type match.\n- Link cards now include a direct link to the series inside Shoko.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.7/TmdbLinkFixer-v0.1.7_linux-arm64.zip",
+          "checksum": "f8dbfaf616f3cdbe18b6db6197bff0a9b0eb8f5e6211d51b6c5f7f800b01eda1"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.7/TmdbLinkFixer-v0.1.7_linux-x64.zip",
+          "checksum": "5832ea91fd2d1fc1ba79b805ce54b42436e0594d081131bf119d6acaad0ef3cd"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.7/TmdbLinkFixer-v0.1.7_win-x64.zip",
+          "checksum": "5ca4041e6915c63d744dced6cc567cee40483c4d38d57c17ef064f465f646f95"
+        }
+      ]
+    },
+    {
       "version": "0.1.6",
       "tag": "tmdb-link-fixer/v0.1.6",
       "source_revision": "c16a5908948ff8d78b93e21b9d74e2a97a36c311",
