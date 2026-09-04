@@ -15,7 +15,6 @@ public enum LinkHealth
     NotChecked,
     Checking,
     Valid,
-    Redirected,
     Invalid,
     Error,
 }
@@ -59,9 +58,6 @@ public sealed record TmdbLinkItem(
     string? OldPosterUrl,
     LinkHealth Health,
     string? Message,
-    TmdbMediaKind? RedirectKind,
-    int? RedirectId,
-    string? RedirectPosterUrl,
     DateTimeOffset? CheckedAt,
     IReadOnlyList<EpisodeOption> Episodes);
 

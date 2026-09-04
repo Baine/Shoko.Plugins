@@ -132,11 +132,15 @@ public sealed class TmdbLinkFixerService(
             .Where(x => x.AnidbEpisodeId > 0 && x.TmdbEpisodeId > 0)
             .Distinct()
             .ToList();
-        var preservedEpisodeMappings = series.Episodes
+        // Preserve user mappings that belong to other shows, but never the mappings of the show
+        // that is being removed: they are deleted with its link and would become orphaned.
+        var dropSourceShow = source.Kind == TmdbMediaKind.Show && !mappingOnly;
+        var preservedXrefs = series.Episodes
             .SelectMany(episode => episode.TmdbEpisodeCrossReferences
                 .Where(xref => xref.TmdbEpisodeID > 0 &&
-                    xref.TmdbShowID != request.TargetId)
-                .Select(xref => new EpisodeMappingRequest(episode.AnidbEpisodeID, xref.TmdbEpisodeID)))
+                    xref.TmdbShowID != request.TargetId &&
+                    !(dropSourceShow && xref.TmdbShowID == source.TmdbId))
+                .Select(xref => (Episode: episode.AnidbEpisodeID, xref.TmdbShowID, xref.TmdbEpisodeID)))
             .Distinct()
             .ToList();
         if (request.TargetKind == TmdbMediaKind.Show)
@@ -173,6 +177,10 @@ public sealed class TmdbLinkFixerService(
 
                 if (!mappingOnly)
                 {
+                    // Remove the old link before adding the replacement: Shoko's RemoveShowLink
+                    // historically deleted the episode links of surviving shows when an anime had
+                    // multiple show links, so the anime must never hold both links at once.
+                    await RemoveSourceAsync(source).WaitAsync(cancellationToken).ConfigureAwait(false);
                     await linkingService.AddShowLink(
                         source.AnidbAnimeId,
                         request.TargetId,
@@ -183,6 +191,32 @@ public sealed class TmdbLinkFixerService(
                 // AddShowLink invokes Shoko's automatic episode matcher. Replace provisional links
                 // for the selected show with the administrator-confirmed mapping, while restoring
                 // user mappings belonging to any other show linked to this AniDB anime.
+                //
+                // A cross-reference can outlive its TMDB episode row (TMDB removed the episode and
+                // Shoko purged it). The reset below deletes such xrefs anyway and SetEpisodeLink
+                // cannot restore them, so drop them instead of failing the accept.
+                var existingEpisodeIds = new Dictionary<int, HashSet<int>>();
+                HashSet<int> ExistingEpisodeIds(int showId)
+                {
+                    if (!existingEpisodeIds.TryGetValue(showId, out var ids))
+                    {
+                        var show = metadataService.GetSeriesByProviderID(showId, IMetadataService.ProviderName.TMDB) as ITmdbShow;
+                        ids = existingEpisodeIds[showId] = show?.Episodes.Select(x => x.ID).ToHashSet() ?? [];
+                    }
+                    return ids;
+                }
+
+                var preservedEpisodeMappings = preservedXrefs
+                    .Where(x => ExistingEpisodeIds(x.TmdbShowID).Contains(x.TmdbEpisodeID))
+                    .Select(x => new EpisodeMappingRequest(x.Episode, x.TmdbEpisodeID))
+                    .Distinct()
+                    .ToList();
+                var droppedPreserved = preservedXrefs.Count - preservedEpisodeMappings.Count;
+                if (droppedPreserved > 0)
+                    logger.LogWarning(
+                        "Dropped {Count} preserved episode mapping(s) for {LinkKey}: their TMDB episode no longer exists in Shoko.",
+                        droppedPreserved, request.Key);
+
                 linkingService.ResetAllEpisodeLinks(source.AnidbAnimeId, allowAuto: false);
                 foreach (var group in episodeMappings.Concat(preservedEpisodeMappings).GroupBy(x => x.AnidbEpisodeId))
                 {
@@ -198,8 +232,7 @@ public sealed class TmdbLinkFixerService(
                         index++;
                     }
                 }
-                if (!mappingOnly)
-                    await RemoveSourceAsync(source).WaitAsync(cancellationToken).ConfigureAwait(false);
+                VerifyConfirmedEpisodeMappings(source.AnidbAnimeId, episodeMappings);
             }
             else
             {
@@ -264,7 +297,7 @@ public sealed class TmdbLinkFixerService(
 
             foreach (var link in links)
             {
-                SetCheck(link.Key, new(LinkHealth.Checking, null, null, null, null, null));
+                SetCheck(link.Key, new(LinkHealth.Checking, null, null));
                 if (!remoteChecks.TryGetValue((link.Kind, link.TmdbId), out var result))
                 {
                     if (!ignoreCache && TmdbValidationCache.TryGet(link.Kind, link.TmdbId, out result, out _))
@@ -279,9 +312,7 @@ public sealed class TmdbLinkFixerService(
                     remoteChecks[(link.Kind, link.TmdbId)] = result;
                 }
 
-                SetCheck(link.Key, new(
-                    result.Health, result.Message, result.RedirectKind, result.RedirectId,
-                    result.RedirectPosterUrl, DateTimeOffset.UtcNow));
+                SetCheck(link.Key, new(result.Health, result.Message, DateTimeOffset.UtcNow));
                 completed++;
                 if (result.Health == LinkHealth.Valid) valid++;
                 else if (result.Health == LinkHealth.Error) errors++;
@@ -370,12 +401,12 @@ public sealed class TmdbLinkFixerService(
     {
         var check = _checks.GetValueOrDefault(link.Key);
         if (check is null && TmdbValidationCache.TryGet(link.Kind, link.TmdbId, out var cached, out var checkedAt))
-            check = new(cached.Health, cached.Message, cached.RedirectKind, cached.RedirectId, cached.RedirectPosterUrl, checkedAt);
-        check ??= new CheckedLink(LinkHealth.NotChecked, null, null, null, null, null);
+            check = new(cached.Health, cached.Message, checkedAt);
+        check ??= new CheckedLink(LinkHealth.NotChecked, null, null);
         return new(link.Key, link.ShokoSeriesId, link.AnidbAnimeId, link.AnidbEpisodeId, link.SourceAnidbEpisodeIds, link.SeriesTitle,
             link.EpisodeTitle, link.EpisodeLabel, $"https://anidb.net/anime/{link.AnidbAnimeId}", link.AnidbPosterUrl,
             link.Kind, link.TmdbId, TmdbLinkProbe.BuildUri(link.Kind, link.TmdbId).ToString(), link.OldPosterUrl,
-            check.Health, check.Message, check.RedirectKind, check.RedirectId, check.RedirectPosterUrl, check.CheckedAt,
+            check.Health, check.Message, check.CheckedAt,
             link.Episodes);
     }
 
@@ -443,6 +474,28 @@ public sealed class TmdbLinkFixerService(
             : Task.WhenAll(source.SourceAnidbEpisodeIds.Select(
                 episodeId => linkingService.RemoveMovieLinkForEpisode(episodeId, source.TmdbId, purge: false)));
 
+    // Reads the episode cross-references back after saving. SetEpisodeLink reports success even
+    // when a later write (for example a show-link removal inside Shoko) deletes the xref again,
+    // so the confirmed mapping must be verified against the actual database state.
+    private void VerifyConfirmedEpisodeMappings(int anidbAnimeId, IReadOnlyList<EpisodeMappingRequest> expected)
+    {
+        var series = metadataService.GetShokoSeriesByAnidbID(anidbAnimeId);
+        if (series is null)
+            throw new InvalidOperationException("The Shoko series no longer exists after saving episode mappings.");
+
+        var linked = series.Episodes
+            .SelectMany(episode => episode.TmdbEpisodeCrossReferences
+                .Where(xref => xref.TmdbEpisodeID > 0)
+                .Select(xref => (Episode: episode.AnidbEpisodeID, xref.TmdbEpisodeID)))
+            .ToHashSet();
+        var missing = expected
+            .Where(mapping => !linked.Contains((mapping.AnidbEpisodeId, mapping.TmdbEpisodeId)))
+            .ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"Confirmed episode mappings are missing after saving: {string.Join(", ", missing.Select(m => $"AniDB {m.AnidbEpisodeId} → TMDB {m.TmdbEpisodeId}"))}");
+    }
+
     private void SetCheck(string key, CheckedLink check)
     {
         lock (_gate) _checks[key] = check;
@@ -461,7 +514,6 @@ public sealed class TmdbLinkFixerService(
     private static int ProblemOrder(LinkHealth health) => health switch
     {
         LinkHealth.Invalid => 5,
-        LinkHealth.Redirected => 4,
         LinkHealth.Error => 3,
         LinkHealth.Checking => 2,
         LinkHealth.NotChecked => 1,
@@ -508,6 +560,5 @@ public sealed class TmdbLinkFixerService(
         string? EpisodeTitle, string? EpisodeLabel, string? AnidbPosterUrl, TmdbMediaKind Kind, int TmdbId,
         string? OldPosterUrl, IReadOnlyList<EpisodeOption> Episodes);
     private sealed record CheckedLink(
-        LinkHealth Health, string? Message, TmdbMediaKind? RedirectKind, int? RedirectId,
-        string? RedirectPosterUrl, DateTimeOffset? CheckedAt);
+        LinkHealth Health, string? Message, DateTimeOffset? CheckedAt);
 }

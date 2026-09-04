@@ -7,12 +7,12 @@ Checks existing AniDB-to-TMDB movie and show links and provides an administrator
 - Scans every TMDB movie and show link without modifying it.
 - Validates links through the TMDB API instead of bulk-requesting public website pages.
 - Persists validation results for four days and provides an explicit cache-bypass option for forced rechecks.
-- Detects valid targets, missing targets, and an existing target in the alternate movie/TV namespace.
+- Detects valid and missing targets.
 - Provides user-triggered Shoko match suggestions plus a broad TMDB title search, and manual TMDB movie/show search from the review page.
 - Includes restricted/adult TMDB entries in searches so administrators can review legitimate adult matches.
-- Shows AniDB, current TMDB, and proposed TMDB links together.
+- Shows Shoko, AniDB, current TMDB, and proposed TMDB links together.
 - Shows the relevant poster when a link is hovered and a three-poster comparison before confirmation.
-- Supports candidates found through an alternate-type check, a user-triggered suggestion search, or a manual movie/show search.
+- Supports candidates found through a user-triggered suggestion search or a manual movie/show search.
 - Requires an explicit AniDB episode selection for movie targets and an explicit AniDB-to-TMDB episode mapping for show targets before final acceptance.
 - Allows an administrator to repair or edit the episode mapping of an existing TMDB show link without replacing the show link itself.
 - Groups multiple AniDB episodes that reference the same TMDB movie into one review card instead of listing the movie link once per episode.
@@ -26,8 +26,8 @@ After installation and a Shoko restart, open:
 
 1. Enter a TMDB v3 API key or v4 read access token, select a rate from 1 to 10 requests/second, and save the API settings.
 2. Click **Check all links**. Enable **Ignore cached results** first only when a forced TMDB recheck is needed.
-3. Review an alternate-type result, request unverified match suggestions for one problematic link, or search manually.
-4. Inspect the AniDB, current TMDB, and proposed TMDB pages and posters.
+3. Request unverified match suggestions for one problematic link, or search manually.
+4. Inspect the Shoko, AniDB, current TMDB, and proposed TMDB pages and posters.
 5. Open the episode-mapping dialog. Select one AniDB episode for a movie, or map AniDB episodes to exact TMDB season episodes for a show. The optional number-based helper fills only the visible form and does not save anything.
 6. Save the mapping review, confirm the exact IDs and episode mapping with the checkbox, and click **Accept this exact replacement**.
 
@@ -40,11 +40,11 @@ The scanner never bulk-requests public `themoviedb.org` pages. It calls the TMDB
 - `GET /3/movie/{id}` for a movie link
 - `GET /3/tv/{id}` for a show link
 
-HTTP 200 means that the entity exists. HTTP 404 means that the entity is missing from that namespace. Only after a 404 does the scanner check the same numeric ID in the other namespace. Movie and TV IDs are separate namespaces, so an existing alternate ID is only an unverified candidate and may be a completely unrelated title.
+HTTP 200 means that the entity exists. HTTP 404 means that the entity is missing. TMDB reclassifies entries between the movie and TV namespaces without keeping the numeric ID, so the same ID under the other media type is always an unrelated title and is never suggested.
 
-Current links are deduplicated by media type and TMDB ID before remote validation. Every unique `(movie|show, TMDB ID)` is requested once per scan even if several Shoko cross-references use it. Requests are evenly spaced and capped at 10 requests/second; the setting can be reduced as far as 1 request/second. At the default rate, 6,500 unique endpoint checks take at least about 10 minutes 50 seconds. Missing entries can take longer because the alternate media type is checked as a second request.
+Current links are deduplicated by media type and TMDB ID before remote validation. Every unique `(movie|show, TMDB ID)` is requested once per scan even if several Shoko cross-references use it. Requests are evenly spaced and capped at 10 requests/second; the setting can be reduced as far as 1 request/second. At the default rate, 6,500 unique endpoint checks take at least about 10 minutes 50 seconds.
 
-Successful valid, missing, and alternate-type validation results are stored in `TmdbLinkFixer.validation-cache.json` and reused for four days, including across Shoko restarts. Transient network, authentication, server, and rate-limit errors are never cached. **Ignore cached results** bypasses all unexpired entries for that scan and replaces them with fresh responses; duplicate IDs are still requested only once during the forced scan.
+Successful valid and missing validation results are stored in `TmdbLinkFixer.validation-cache.json` and reused for four days, including across Shoko restarts. Transient network, authentication, server, and rate-limit errors are never cached. **Ignore cached results** bypasses all unexpired entries for that scan and replaces them with fresh responses; duplicate IDs are still requested only once during the forced scan.
 
 The scanner honors TMDB's `Retry-After` response after HTTP 429 and pauses for up to five minutes. Authentication failures stop the scan immediately instead of repeating a rejected credential across the library. See TMDB's [rate-limiting documentation](https://developer.themoviedb.org/docs/rate-limiting).
 
@@ -52,9 +52,9 @@ The API credential is stored in `TmdbLinkFixer.settings.json` under Shoko's conf
 
 Manual replacement searches use the configured plugin API credential, explicitly include adult results, and share the validation request throttle. Movie and show searches are handled independently, so a temporary failure in one media type does not hide results returned for the other.
 
-Automatic match suggestions are requested only for one link after the administrator clicks **Find automatic suggestions**; they are not generated in bulk during a scan. Shoko's automatic matches are supplemented with a broad TMDB API title search because otherwise valid entries may have no Animation genre assigned at TMDB. These broad results are unverified suggestions. Search results, automatic suggestions, and alternate-type candidates are inert until an administrator completes the final comparison and confirmation.
+Automatic match suggestions are requested only for one link after the administrator clicks **Find automatic suggestions**; they are not generated in bulk during a scan. Shoko's automatic matches are supplemented with a broad TMDB API title search because otherwise valid entries may have no Animation genre assigned at TMDB. These broad results are unverified suggestions. Search results and automatic suggestions are inert until an administrator completes the final comparison and confirmation.
 
-When a replacement is explicitly accepted, the plugin validates the exact target again and loads its metadata before changing any links. Movie targets are attached to the exact AniDB episode selected in the mapping dialog. Show targets require at least one explicit AniDB-to-TMDB episode mapping. After the new show link is added and the old link is removed, provisional automatic episode matches for the selected show are reset and only the mappings confirmed in the dialog are stored as user-verified links; unmapped episodes remain unlinked from that show. Confirmed episode mappings belonging to other TMDB shows are preserved. Existing show mappings can be edited through **Edit episode mapping** without replacing the show link. The plugin never chooses or accepts a result by title similarity or episode number on its own.
+When a replacement is explicitly accepted, the plugin validates the exact target again and loads its metadata before changing any links. Movie targets are attached to the exact AniDB episode selected in the mapping dialog. Show targets require at least one explicit AniDB-to-TMDB episode mapping. The old link is removed before the replacement link is added so the anime never holds both show links at once, then provisional automatic episode matches for the selected show are reset and only the mappings confirmed in the dialog are stored as user-verified links; unmapped episodes remain unlinked from that show. Confirmed episode mappings belonging to other TMDB shows are preserved; a preserved mapping whose TMDB episode row no longer exists in Shoko (the episode was removed from TMDB and purged) is dropped with a log entry instead of aborting the accept. Before reporting success, the plugin reads the saved episode cross-references back and fails the operation if a confirmed mapping is missing. Existing show mappings can be edited through **Edit episode mapping** without replacing the show link. The plugin never chooses or accepts a result by title similarity or episode number on its own.
 
 When several episodes of one AniDB anime reference the same current TMDB movie, the review page represents them as one grouped source link. Accepting a replacement removes that exact old TMDB movie reference from every episode in the group. A replacement movie is still linked only to the single AniDB episode explicitly selected in the mapping dialog.
 

@@ -28,20 +28,8 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
         if (expected.State == ApiEntityState.Error)
             return ProbeResult.Error(expected.ErrorMessage!, expected.Fatal);
 
-        // TMDB movie and TV namespaces can contain the same numeric ID. We only
-        // present the alternate type as a candidate when the expected endpoint
-        // is missing and the alternate endpoint actually exists.
-        var alternateKind = expectedKind == TmdbMediaKind.Movie ? TmdbMediaKind.Show : TmdbMediaKind.Movie;
-        var alternate = await RequestEntityAsync(alternateKind, expectedId, settings, cancellationToken).ConfigureAwait(false);
-        if (alternate.State == ApiEntityState.Exists)
-            return ProbeResult.Redirected(
-                alternateKind,
-                expectedId,
-                alternate.PosterUrl,
-                $"The TMDB {KindLabel(expectedKind)} endpoint is missing, but {KindLabel(alternateKind)} {expectedId} exists. Review it; matching numeric IDs can still refer to unrelated titles.");
-        if (alternate.State == ApiEntityState.Error)
-            return ProbeResult.Error($"The original link is missing, but the alternate media type could not be checked: {alternate.ErrorMessage}", alternate.Fatal);
-
+        // TMDB reclassifies entries between the movie and TV namespaces without keeping the
+        // numeric ID, so the same ID under the other media type is always an unrelated title.
         return ProbeResult.Invalid("TMDB reports that this entry does not exist.");
     }
 
@@ -361,8 +349,6 @@ public sealed class TmdbLinkProbe(IHttpClientFactory clientFactory, ILogger<Tmdb
         return retry;
     }
 
-    private static string KindLabel(TmdbMediaKind kind) => kind == TmdbMediaKind.Movie ? "movie" : "show";
-
     private enum ApiEntityState { Exists, Missing, Error }
 
     private sealed record ApiEntityResult(ApiEntityState State, string? PosterUrl, string? ErrorMessage, bool Fatal)
@@ -385,10 +371,9 @@ public sealed record TmdbSearchResponse(IReadOnlyList<SearchResult> Results, str
     public static TmdbSearchResponse Failure(string error) => new([], error);
 }
 
-public sealed record ProbeResult(LinkHealth Health, string? Message, TmdbMediaKind? RedirectKind, int? RedirectId, string? RedirectPosterUrl, bool Fatal)
+public sealed record ProbeResult(LinkHealth Health, string? Message, bool Fatal)
 {
-    public static ProbeResult Valid() => new(LinkHealth.Valid, null, null, null, null, false);
-    public static ProbeResult Invalid(string message) => new(LinkHealth.Invalid, message, null, null, null, false);
-    public static ProbeResult Error(string message, bool fatal = false) => new(LinkHealth.Error, message, null, null, null, fatal);
-    public static ProbeResult Redirected(TmdbMediaKind kind, int id, string? posterUrl, string message) => new(LinkHealth.Redirected, message, kind, id, posterUrl, false);
+    public static ProbeResult Valid() => new(LinkHealth.Valid, null, false);
+    public static ProbeResult Invalid(string message) => new(LinkHealth.Invalid, message, false);
+    public static ProbeResult Error(string message, bool fatal = false) => new(LinkHealth.Error, message, fatal);
 }

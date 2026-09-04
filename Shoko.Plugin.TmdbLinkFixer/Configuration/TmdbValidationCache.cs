@@ -53,7 +53,7 @@ internal static class TmdbValidationCache
                 return false;
             }
 
-            result = new(entry.Health, entry.Message, entry.RedirectKind, entry.RedirectId, entry.RedirectPosterUrl, false);
+            result = new(entry.Health, entry.Message, false);
             checkedAt = entry.CheckedAt;
             return true;
         }
@@ -69,9 +69,6 @@ internal static class TmdbValidationCache
             _entries[Key(kind, id)] = new(
                 result.Health,
                 result.Message,
-                result.RedirectKind,
-                result.RedirectId,
-                result.RedirectPosterUrl,
                 DateTimeOffset.UtcNow);
             _dirtyEntries++;
             if (_dirtyEntries >= SaveBatchSize)
@@ -98,7 +95,7 @@ internal static class TmdbValidationCache
             if (File.Exists(_cachePath))
             {
                 var document = JsonSerializer.Deserialize<CacheDocument>(File.ReadAllText(_cachePath), JsonOptions);
-                if (document?.Entries is not null)
+                if (document is { SchemaVersion: 2 } and { Entries: not null })
                     _entries = new(document.Entries, StringComparer.Ordinal);
             }
 
@@ -149,15 +146,12 @@ internal static class TmdbValidationCache
 
     private sealed class CacheDocument
     {
-        public int SchemaVersion { get; init; } = 1;
+        public int SchemaVersion { get; init; } = 2;
         public Dictionary<string, CacheEntry> Entries { get; init; } = new(StringComparer.Ordinal);
     }
 
     private sealed record CacheEntry(
         LinkHealth Health,
         string? Message,
-        TmdbMediaKind? RedirectKind,
-        int? RedirectId,
-        string? RedirectPosterUrl,
         DateTimeOffset CheckedAt);
 }
