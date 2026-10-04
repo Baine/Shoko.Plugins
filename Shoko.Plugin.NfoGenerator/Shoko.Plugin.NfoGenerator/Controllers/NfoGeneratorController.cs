@@ -35,7 +35,7 @@ public sealed class NfoGeneratorController : ControllerBase
     {
         if (_metadataService.GetShokoSeriesByID(seriesID) is not { } series)
             return NotFound(new { status = "error", message = $"Series {seriesID} not found" });
-        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.ID; }, prioritize: true);
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.LocalID; }, prioritize: true);
         return Accepted(new { status = "queued" });
     }
 
@@ -45,7 +45,7 @@ public sealed class NfoGeneratorController : ControllerBase
     {
         if (_metadataService.GetShokoEpisodeByID(episodeID) is not { } episode)
             return NotFound(new { status = "error", message = $"Episode {episodeID} not found" });
-        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Episode; job.ID = episode.ID; }, prioritize: true);
+        await _queueScheduler.Enqueue<NfoGenerationJob>(job => { job.Kind = NfoGenerationKind.Episode; job.ID = episode.LocalID; }, prioritize: true);
         return Accepted(new { status = "queued" });
     }
 

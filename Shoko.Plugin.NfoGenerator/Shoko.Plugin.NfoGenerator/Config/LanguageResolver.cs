@@ -14,8 +14,8 @@ internal static class LanguageResolver
     public static string? Title(IWithTitles entity, string chain)
         => Resolve(chain, entity.PreferredTitle?.Value, entity.DefaultTitle.Value, entity.Titles, t => t.LanguageCode, t => t.Value);
 
-    public static string? Description(IWithDescriptions entity, string chain)
-        => Resolve(chain, entity.PreferredDescription?.Value, entity.DefaultDescription?.Value, entity.Descriptions, t => t.LanguageCode, t => t.Value);
+    public static string? Description(IWithOverviews entity, string chain)
+        => Resolve(chain, entity.PreferredOverview?.Value, entity.DefaultOverview?.Value, entity.Overviews, t => t.LanguageCode, t => t.Value);
 
     private static string? Resolve<T>(string chain, string? preferred, string? original, IEnumerable<T> items, Func<T, string> getLangCode, Func<T, string> getValue)
     {

@@ -6,12 +6,11 @@ using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Config.Services;
 using Shoko.Abstractions.Metadata;
 using Shoko.Abstractions.Metadata.Containers;
+using Shoko.Abstractions.Metadata.CrossReferences;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Abstractions.Metadata.Image;
 using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Metadata.Shoko;
-using Shoko.Abstractions.Metadata.Tmdb;
-using Shoko.Abstractions.Metadata.Tmdb.CrossReferences;
 using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Services;
@@ -37,7 +36,16 @@ internal static class LanguageResolverCheck
         public string? CountryCode { get; set; }
         public TitleLanguage Language { get; set; }
         public TitleType Type { get; set; }
-        public DataSource Source { get; set; }
+        public MetadataSource Source { get; set; } = MetadataSource.TMDB;
+        public int? ID { get; set; }
+        public MetadataGuid EntityID { get; set; } = new(MetadataSource.TMDB, MetadataEntityType.Series, "0");
+        public int? ReferenceID { get; set; }
+        public bool IsEnabled { get; set; } = true;
+        public TextPreference Preference { get; set; }
+        public int Ordering { get; set; }
+        public string ScriptCode { get; set; } = "";
+        public bool IsInlineDefault { get; set; }
+        public bool IsSynthesized { get; set; }
         public bool Equals(ITitle? other) => other is not null && other.Value == Value;
         public bool Equals(IText? other) => other is not null && other.Value == Value;
     }
@@ -50,11 +58,11 @@ internal static class LanguageResolverCheck
         public string Title => PreferredTitle?.Value ?? DefaultTitle.Value;
     }
 
-    private sealed class FakeDescribed : IWithDescriptions
+    private sealed class FakeDescribed : IWithOverviews
     {
-        public IText? DefaultDescription { get; set; }
-        public IText? PreferredDescription { get; set; }
-        public IReadOnlyList<IText> Descriptions { get; set; } = [];
+        public IText? DefaultOverview { get; set; }
+        public IText? PreferredOverview { get; set; }
+        public IReadOnlyList<IText> Overviews { get; set; } = [];
     }
 
     public static void SelfCheck()
@@ -83,9 +91,9 @@ internal static class LanguageResolverCheck
 
         var described = new FakeDescribed
         {
-            PreferredDescription = new FakeTitle("English plot", "en-US"),
-            DefaultDescription = new FakeTitle("Deutsche Handlung", "de-DE"),
-            Descriptions =
+            PreferredOverview = new FakeTitle("English plot", "en-US"),
+            DefaultOverview = new FakeTitle("Deutsche Handlung", "de-DE"),
+            Overviews =
             [
                 new FakeTitle("Deutsche Handlung", "de-DE"),
                 new FakeTitle("English plot", "en-US"),
@@ -104,7 +112,6 @@ internal static class LanguageResolverCheck
             throw new InvalidOperationException($"LanguageResolver: {what}");
     }
 }
-
 internal static class NfoCleanupCheck
 {
     public static void SelfCheck(string outputDir)
@@ -387,27 +394,29 @@ internal static class NfoCleanupCheck
 
     private static IVideoFile MappedVideoFile(string path, int tmdbShowId, int? episodeShowId = null)
     {
-        var crossReference = Proxy<ITmdbShowCrossReference>(method => method.Name switch
+        var crossReference = Proxy<IMetadataSeriesCrossReference>(method => method.Name switch
         {
-            "get_TmdbShowID" => tmdbShowId,
+            "get_Source" => MetadataSource.TMDB,
+            "get_ProviderID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Series, tmdbShowId.ToString()),
             "get_MatchRating" => default(MatchRating),
             _ => null,
         });
-        var series = Proxy<IShokoSeries>(method => method.Name == "get_TmdbShowCrossReferences" ? new[] { crossReference } : null);
+        var series = Proxy<IShokoSeries>(method => method.Name == "get_MetadataSeriesCrossReferences" ? new[] { crossReference } : null);
         var episodeReferences = episodeShowId is { } episodeId
-            ? new[] { Proxy<ITmdbEpisodeCrossReference>(method => method.Name switch
+            ? new[] { Proxy<IMetadataEpisodeCrossReference>(method => method.Name switch
             {
-                "get_TmdbShowID" => episodeId,
+                "get_Source" => MetadataSource.TMDB,
+                "get_ProviderParentID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Series, episodeId.ToString()),
                 "get_MatchRating" => default(MatchRating),
                 "get_Ordering" => 1,
-                "get_TmdbEpisodeID" => 1,
+                "get_ProviderID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Episode, "1"),
                 _ => null,
             }) }
-            : Array.Empty<ITmdbEpisodeCrossReference>();
+            : Array.Empty<IMetadataEpisodeCrossReference>();
         var episode = Proxy<IShokoEpisode>(method => method.Name switch
         {
             "get_Series" => series,
-            "get_TmdbEpisodeCrossReferences" => episodeReferences,
+            "get_MetadataEpisodeCrossReferences" => episodeReferences,
             _ => null,
         });
         var video = Proxy<IVideo>(method => method.Name == "get_Episodes" ? new[] { episode } : null);
@@ -798,18 +807,19 @@ internal static class GenerationCheck
             _ => Default(method),
         });
         var episodeReferences = episodeShowId is { } resolvedShowId
-            ? new[] { Proxy<ITmdbEpisodeCrossReference>(method => method.Name switch
+            ? new[] { Proxy<IMetadataEpisodeCrossReference>(method => method.Name switch
             {
-                "get_TmdbShowID" => resolvedShowId,
-                "get_TmdbShow" when linkedSeries is not null => Proxy<ITmdbShow>(showMethod => showMethod.Name == "get_ShokoSeries"
+                "get_Source" => MetadataSource.TMDB,
+                "get_ProviderID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Episode, episodeNumber.ToString()),
+                "get_ProviderParentID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Series, resolvedShowId.ToString()),
+                "get_Provider" when linkedSeries is not null => Proxy<ISeries>(showMethod => showMethod.Name == "get_ShokoSeries"
                     ? tmdbShowSeries ?? linkedSeries
                     : Default(showMethod)),
                 "get_MatchRating" => default(MatchRating),
                 "get_Ordering" => episodeNumber,
-                "get_TmdbEpisodeID" => episodeNumber,
                 _ => Default(method),
             }) }
-            : Array.Empty<ITmdbEpisodeCrossReference>();
+            : Array.Empty<IMetadataEpisodeCrossReference>();
         IVideo? video = null;
         var episode = Proxy<IShokoEpisode>(method => method.Name switch
         {
@@ -817,16 +827,16 @@ internal static class GenerationCheck
             "get_DefaultTitle" => episodeTitle,
             "get_PreferredTitle" => episodeTitle,
             "get_Titles" => new[] { episodeTitle },
-            "get_DefaultDescription" => episodeTitle,
-            "get_PreferredDescription" => episodeTitle,
-            "get_Descriptions" => new[] { (IText)episodeTitle },
-            "get_TmdbEpisodeCrossReferences" => episodeReferences,
-            "get_TmdbMovieCrossReferences" => Array.Empty<ITmdbMovieCrossReference>(),
-            "get_VideoList" => video is null ? Array.Empty<IVideo>() : new[] { video },
+            "get_DefaultOverview" => episodeTitle,
+            "get_PreferredOverview" => episodeTitle,
+            "get_Overviews" => new[] { (IText)episodeTitle },
+            "get_MetadataEpisodeCrossReferences" => episodeReferences,
+            "get_MetadataMovieCrossReferences" => Array.Empty<IMetadataMovieCrossReference>(),
+            "get_Videos" => video is null ? Array.Empty<IVideo>() : new[] { video },
             "get_SeasonNumber" => 1,
             "get_EpisodeNumber" => episodeNumber,
             "get_Runtime" => TimeSpan.FromMinutes(24),
-            "get_ID" => fileId + 1000,
+            "get_LocalID" => fileId + 1000,
             "get_AnidbEpisodeID" => fileId + 2000,
             _ => Default(method),
         });
@@ -866,26 +876,27 @@ internal static class GenerationCheck
             _ => Default(method),
         });
         var showReferences = seriesShowId is { } resolvedShowId
-            ? new[] { Proxy<ITmdbShowCrossReference>(method => method.Name switch
+            ? new[] { Proxy<IMetadataSeriesCrossReference>(method => method.Name switch
             {
-                "get_TmdbShowID" => resolvedShowId,
+                "get_Source" => MetadataSource.TMDB,
+                "get_ProviderID" => new MetadataGuid(MetadataSource.TMDB, MetadataEntityType.Series, resolvedShowId.ToString()),
                 "get_MatchRating" => default(MatchRating),
                 _ => Default(method),
             }) }
-            : Array.Empty<ITmdbShowCrossReference>();
+            : Array.Empty<IMetadataSeriesCrossReference>();
         var episodes = new List<IShokoEpisode>();
         var series = Proxy<IShokoSeries>(method => method.Name switch
         {
-            "get_ID" => id,
+            "get_LocalID" => id,
             "get_DefaultTitle" => title,
             "get_PreferredTitle" => title,
             "get_Titles" => new[] { title },
-            "get_DefaultDescription" => description,
-            "get_PreferredDescription" => description,
-            "get_Descriptions" => new[] { description },
-            "get_TmdbShowCrossReferences" => showReferences,
+            "get_DefaultOverview" => description,
+            "get_PreferredOverview" => description,
+            "get_Overviews" => new[] { description },
+            "get_MetadataSeriesCrossReferences" => showReferences,
             "get_Type" => AnimeType.TV,
-            "get_TmdbMovieCrossReferences" => Array.Empty<ITmdbMovieCrossReference>(),
+            "get_MetadataMovieCrossReferences" => Array.Empty<IMetadataMovieCrossReference>(),
             "get_Episodes" => episodes,
             "get_Studios" => Empty(method),
             _ => Default(method),

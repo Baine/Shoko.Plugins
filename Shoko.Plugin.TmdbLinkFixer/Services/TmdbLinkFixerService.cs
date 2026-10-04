@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Containers;
 using Shoko.Abstractions.Metadata.Enums;
+using Shoko.Abstractions.Metadata.Providers;
+using Shoko.Abstractions.Metadata.Search;
 using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Metadata.Shoko;
-using Shoko.Abstractions.Metadata.Tmdb;
-using Shoko.Abstractions.Metadata.Tmdb.Services;
 using Shoko.Plugin.TmdbLinkFixer.Configuration;
 using Shoko.Plugin.TmdbLinkFixer.Models;
 
@@ -11,9 +13,8 @@ namespace Shoko.Plugin.TmdbLinkFixer.Services;
 
 public sealed class TmdbLinkFixerService(
     IMetadataService metadataService,
-    ITmdbMetadataService tmdbMetadataService,
-    ITmdbLinkingService linkingService,
-    ITmdbSearchService searchService,
+    IMetadataRefreshService refreshService,
+    IMetadataLinkingService linkingService,
     TmdbLinkProbe probe,
     ILogger<TmdbLinkFixerService> logger)
 {
@@ -69,20 +70,14 @@ public sealed class TmdbLinkFixerService(
         if (query.Length < 2)
             return [];
 
-        var movieTask = probe.SearchAsync(TmdbMediaKind.Movie, query, cancellationToken: cancellationToken);
-        var showTask = probe.SearchAsync(TmdbMediaKind.Show, query, cancellationToken: cancellationToken);
+        var options = new MetadataSearchOptions { Query = query, IncludeRestricted = true, PageSize = 8 };
+        var movieTask = linkingService.SearchMovies(MetadataSource.TMDB, options, cancellationToken);
+        var showTask = linkingService.SearchSeries(MetadataSource.TMDB, options, cancellationToken);
         await Task.WhenAll(movieTask, showTask).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var movieResponse = movieTask.Result;
-        var showResponse = showTask.Result;
-        if (movieResponse.Error is not null)
-            logger.LogWarning("Manual TMDB movie search failed: {Error}", movieResponse.Error);
-        if (showResponse.Error is not null)
-            logger.LogWarning("Manual TMDB show search failed: {Error}", showResponse.Error);
-        if (movieResponse.Error is not null && showResponse.Error is not null)
-            throw new InvalidOperationException($"TMDB search failed. Movie search: {movieResponse.Error} Show search: {showResponse.Error}");
-
-        return movieResponse.Results.Concat(showResponse.Results)
+        return movieTask.Result.Item1.Select(x => ToSearchResult(x, null, "TMDB search"))
+            .Concat(showTask.Result.Item1.Select(x => ToSearchResult(x, null, "TMDB search")))
+            .OfType<SearchResult>()
             .OrderByDescending(x => x.Rating)
             .ThenBy(x => x.Title)
             .ToList();
@@ -136,11 +131,13 @@ public sealed class TmdbLinkFixerService(
         // that is being removed: they are deleted with its link and would become orphaned.
         var dropSourceShow = source.Kind == TmdbMediaKind.Show && !mappingOnly;
         var preservedXrefs = series.Episodes
-            .SelectMany(episode => episode.TmdbEpisodeCrossReferences
-                .Where(xref => xref.TmdbEpisodeID > 0 &&
-                    xref.TmdbShowID != request.TargetId &&
-                    !(dropSourceShow && xref.TmdbShowID == source.TmdbId))
-                .Select(xref => (Episode: episode.AnidbEpisodeID, xref.TmdbShowID, xref.TmdbEpisodeID)))
+            .SelectMany(episode => episode.MetadataEpisodeCrossReferences
+                .Where(xref => xref is not null && xref.Source == MetadataSource.TMDB && xref.ProviderID!.IsNumericID &&
+                    xref.ProviderParentID!.IsNumericID &&
+                    int.TryParse(xref.ProviderParentID.ID, out var showId) && showId != request.TargetId &&
+                    !(dropSourceShow && showId == source.TmdbId))
+                .Select(xref => (Episode: episode.AnidbEpisodeID,
+                    ShowId: int.Parse(xref.ProviderParentID!.ID), EpisodeId: int.Parse(xref.ProviderID!.ID))))
             .Distinct()
             .ToList();
         if (request.TargetKind == TmdbMediaKind.Show)
@@ -159,19 +156,21 @@ public sealed class TmdbLinkFixerService(
         {
             if (request.TargetKind == TmdbMediaKind.Show)
             {
-                await tmdbMetadataService.UpdateShow(new TmdbShowUpdateOptions
+                var targetShowId = TmdbGuid(MetadataEntityType.Series, request.TargetId);
+                await refreshService.RefreshEntry(targetShowId, force: true, new MetadataRefreshOptions
                 {
-                    ShowId = request.TargetId,
-                    ForceRefresh = true,
                     DownloadImages = true,
                     DownloadCrewAndCast = false,
                     DownloadAlternateOrdering = false,
                     DownloadNetworks = false,
                     QuickRefresh = false,
-                }).WaitAsync(cancellationToken).ConfigureAwait(false);
+                    Reason = MetadataRefreshReason.Requested,
+                }, immediate: true, prioritize: true, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-                var targetShow = metadataService.GetSeriesByProviderID(request.TargetId, IMetadataService.ProviderName.TMDB) as ITmdbShow;
-                var targetEpisodeIds = targetShow?.Episodes.Select(x => x.ID).ToHashSet() ?? [];
+                var targetShow = metadataService.GetSeries(targetShowId);
+                var targetEpisodeIds = targetShow?.Episodes
+                    .Where(x => x.ID.IsNumericID)
+                    .Select(x => int.Parse(x.ID.ID)).ToHashSet() ?? [];
                 if (targetEpisodeIds.Count == 0 || episodeMappings.Any(x => !targetEpisodeIds.Contains(x.TmdbEpisodeId)))
                     return new(false, "One or more confirmed TMDB episodes do not belong to the selected show. No link was changed.");
 
@@ -181,11 +180,15 @@ public sealed class TmdbLinkFixerService(
                     // historically deleted the episode links of surviving shows when an anime had
                     // multiple show links, so the anime must never hold both links at once.
                     await RemoveSourceAsync(source).WaitAsync(cancellationToken).ConfigureAwait(false);
-                    await linkingService.AddShowLink(
-                        source.AnidbAnimeId,
-                        request.TargetId,
-                        additiveLink: true,
-                        matchRating: MatchRating.UserVerified).WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await linkingService.AddSeriesLink(new MetadataSeriesLinkRequest
+                    {
+                        Source = MetadataSource.TMDB,
+                        EntityType = MetadataEntityType.Series,
+                        ProviderID = targetShowId,
+                        AnidbAnimeID = source.AnidbAnimeId,
+                        Additive = true,
+                        MatchRating = MatchRating.UserVerified,
+                    }, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
 
                 // AddShowLink invokes Shoko's automatic episode matcher. Replace provisional links
@@ -200,15 +203,16 @@ public sealed class TmdbLinkFixerService(
                 {
                     if (!existingEpisodeIds.TryGetValue(showId, out var ids))
                     {
-                        var show = metadataService.GetSeriesByProviderID(showId, IMetadataService.ProviderName.TMDB) as ITmdbShow;
-                        ids = existingEpisodeIds[showId] = show?.Episodes.Select(x => x.ID).ToHashSet() ?? [];
+                        var show = metadataService.GetSeries(TmdbGuid(MetadataEntityType.Series, showId));
+                        ids = existingEpisodeIds[showId] = show?.Episodes
+                            .Where(x => x.ID.IsNumericID).Select(x => int.Parse(x.ID.ID)).ToHashSet() ?? [];
                     }
                     return ids;
                 }
 
                 var preservedEpisodeMappings = preservedXrefs
-                    .Where(x => ExistingEpisodeIds(x.TmdbShowID).Contains(x.TmdbEpisodeID))
-                    .Select(x => new EpisodeMappingRequest(x.Episode, x.TmdbEpisodeID))
+                    .Where(x => ExistingEpisodeIds(x.ShowId).Contains(x.EpisodeId))
+                    .Select(x => new EpisodeMappingRequest(x.Episode, x.EpisodeId))
                     .Distinct()
                     .ToList();
                 var droppedPreserved = preservedXrefs.Count - preservedEpisodeMappings.Count;
@@ -217,17 +221,21 @@ public sealed class TmdbLinkFixerService(
                         "Dropped {Count} preserved episode mapping(s) for {LinkKey}: their TMDB episode no longer exists in Shoko.",
                         droppedPreserved, request.Key);
 
-                linkingService.ResetAllEpisodeLinks(source.AnidbAnimeId, allowAuto: false);
+                await linkingService.ResetEpisodeLinks(MetadataSource.TMDB, source.AnidbAnimeId, allowAutoMatch: false, cancellationToken)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
                 foreach (var group in episodeMappings.Concat(preservedEpisodeMappings).GroupBy(x => x.AnidbEpisodeId))
                 {
                     var index = 0;
                     foreach (var mapping in group.DistinctBy(x => x.TmdbEpisodeId))
                     {
-                        if (!linkingService.SetEpisodeLink(
+                        if (!await linkingService.SetEpisodeLink(
+                                MetadataSource.TMDB,
                                 mapping.AnidbEpisodeId,
-                                mapping.TmdbEpisodeId,
-                                additiveLink: index > 0,
-                                index: index))
+                                TmdbGuid(MetadataEntityType.Episode, mapping.TmdbEpisodeId),
+                                additive: index > 0,
+                                ordering: index,
+                                providerSeriesID: TmdbGuid(MetadataEntityType.Series, request.TargetId),
+                                cancellationToken).ConfigureAwait(false))
                             throw new InvalidOperationException($"Could not set the confirmed episode mapping for AniDB episode {mapping.AnidbEpisodeId}.");
                         index++;
                     }
@@ -240,19 +248,25 @@ public sealed class TmdbLinkFixerService(
                 if (episodeId is null || series.Episodes.All(x => x.AnidbEpisodeID != episodeId.Value))
                     return new(false, "Select an AniDB episode from this series for the movie link. No link was changed.");
 
-                await tmdbMetadataService.UpdateMovie(new TmdbMovieUpdateOptions
+                var targetMovieId = TmdbGuid(MetadataEntityType.Movie, request.TargetId);
+                await refreshService.RefreshEntry(targetMovieId, force: true, new MetadataRefreshOptions
                 {
-                    MovieId = request.TargetId,
-                    ForceRefresh = true,
                     DownloadImages = true,
                     DownloadCrewAndCast = false,
                     DownloadCollections = false,
-                }).WaitAsync(cancellationToken).ConfigureAwait(false);
-                await linkingService.AddMovieLinkForEpisode(
-                    episodeId.Value,
-                    request.TargetId,
-                    additiveLink: true,
-                    matchRating: MatchRating.UserVerified).WaitAsync(cancellationToken).ConfigureAwait(false);
+                    Reason = MetadataRefreshReason.Requested,
+                }, immediate: true, prioritize: true, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
+                await linkingService.AddMovieLink(new MetadataEpisodeLinkRequest
+                {
+                    Source = MetadataSource.TMDB,
+                    EntityType = MetadataEntityType.Movie,
+                    ProviderID = targetMovieId,
+                    ProviderSeriesID = targetMovieId,
+                    AnidbEpisodeID = episodeId.Value,
+                    AnidbAnimeID = source.AnidbAnimeId,
+                    Additive = true,
+                    MatchRating = MatchRating.UserVerified,
+                }, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
                 await RemoveSourceAsync(source).WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -347,12 +361,16 @@ public sealed class TmdbLinkFixerService(
         var allSeries = metadataService.GetAllShokoSeries();
         foreach (var series in allSeries)
         {
-            var showRefs = series.TmdbShowCrossReferences
-                .Where(x => x.AnidbAnimeID > 0 && x.TmdbShowID > 0)
-                .DistinctBy(x => (x.AnidbAnimeID, x.TmdbShowID)).ToList();
-            var movieRefs = series.TmdbMovieCrossReferences
-                .Where(x => x.AnidbEpisodeID > 0 && x.TmdbMovieID > 0)
-                .DistinctBy(x => (x.AnidbEpisodeID, x.TmdbMovieID)).ToList();
+            var showRefs = series.MetadataSeriesCrossReferences
+                .Where(x => x is not null && x.Source == MetadataSource.TMDB && x.EntityType == MetadataEntityType.Series &&
+                    x.AnidbAnimeID > 0 && x.ProviderID!.IsNumericID && int.TryParse(x.ProviderID.ID, out _))
+                .Select(x => (x.AnidbAnimeID, TmdbId: int.Parse(x.ProviderID!.ID), Provider: x.Provider))
+                .DistinctBy(x => (x.AnidbAnimeID, x.TmdbId)).ToList();
+            var movieRefs = series.MetadataMovieCrossReferences
+                .Where(x => x is not null && x.Source == MetadataSource.TMDB && x.EntityType == MetadataEntityType.Movie &&
+                    x.AnidbEpisodeID > 0 && x.ProviderID!.IsNumericID && int.TryParse(x.ProviderID.ID, out _))
+                .Select(x => (x.AnidbAnimeID, x.AnidbEpisodeID, TmdbId: int.Parse(x.ProviderID!.ID), Provider: x.Provider))
+                .DistinctBy(x => (x.AnidbEpisodeID, x.TmdbId)).ToList();
             if (showRefs.Count is 0 && movieRefs.Count is 0)
                 continue;
 
@@ -361,14 +379,14 @@ public sealed class TmdbLinkFixerService(
 
             foreach (var xref in showRefs)
             {
-                var episodes = BuildEpisodeOptions(rawEpisodes, xref.TmdbShowID);
+                var episodes = BuildEpisodeOptions(rawEpisodes, xref.TmdbId);
                 result.Add(new(
-                    ShowKey(xref.AnidbAnimeID, xref.TmdbShowID), series.ID, xref.AnidbAnimeID, null, [],
-                    series.Title, null, null, anidbPosterUrl, TmdbMediaKind.Show, xref.TmdbShowID,
-                    ImageUrl(xref.TmdbShow?.PrimaryImage), episodes));
+                    ShowKey(xref.AnidbAnimeID, xref.TmdbId), series.LocalID, xref.AnidbAnimeID, null, [],
+                    series.Title, null, null, anidbPosterUrl, TmdbMediaKind.Show, xref.TmdbId,
+                    ImageUrl((xref.Provider as IWithPrimaryImage)?.PrimaryImage), episodes));
             }
 
-            foreach (var group in movieRefs.GroupBy(x => (x.AnidbAnimeID, x.TmdbMovieID)))
+            foreach (var group in movieRefs.GroupBy(x => (x.AnidbAnimeID, x.TmdbId)))
             {
                 var linkedEpisodeIds = group.Select(x => x.AnidbEpisodeID).Distinct().Order().ToList();
                 var linkedEpisodes = rawEpisodes
@@ -379,8 +397,8 @@ public sealed class TmdbLinkFixerService(
                 var firstEpisode = linkedEpisodes.FirstOrDefault();
                 var grouped = linkedEpisodeIds.Count > 1;
                 result.Add(new(
-                    MovieKey(group.Key.AnidbAnimeID, group.Key.TmdbMovieID),
-                    series.ID,
+                    MovieKey(group.Key.AnidbAnimeID, group.Key.TmdbId),
+                    series.LocalID,
                     group.Key.AnidbAnimeID,
                     firstEpisode?.AnidbEpisodeID ?? linkedEpisodeIds[0],
                     linkedEpisodeIds,
@@ -389,8 +407,8 @@ public sealed class TmdbLinkFixerService(
                     grouped ? $"{linkedEpisodeIds.Count} linked AniDB episodes" : firstEpisode is null ? $"AniDB EID {linkedEpisodeIds[0]}" : $"{EpisodePrefix(firstEpisode)}{firstEpisode.EpisodeNumber}",
                     anidbPosterUrl,
                     TmdbMediaKind.Movie,
-                    group.Key.TmdbMovieID,
-                    ImageUrl(group.Select(x => x.TmdbMovie).FirstOrDefault(x => x is not null)?.PrimaryImage),
+                    group.Key.TmdbId,
+                    ImageUrl((group.Select(x => x.Provider).FirstOrDefault(x => x is not null) as IWithPrimaryImage)?.PrimaryImage),
                     BuildEpisodeOptions(rawEpisodes, null)));
             }
         }
@@ -419,10 +437,11 @@ public sealed class TmdbLinkFixerService(
         var candidates = new List<SearchResult>();
         try
         {
-            var results = await searchService.SearchForAutoMatch(series.AnidbAnime).WaitAsync(cancellationToken).ConfigureAwait(false);
-            candidates.AddRange(results.Select(x => x.IsMovie
-                    ? ToSearchResult(x.TmdbMovie!, x.AnidbEpisode?.ID, x.MatchRating.ToString())
-                    : ToSearchResult(x.TmdbShow!, x.MatchRating.ToString())));
+            var results = await linkingService.PreviewAutoLink(MetadataSource.TMDB, series.AnidbAnimeID, cancellationToken)
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+            candidates.AddRange(results
+                .Select(x => ToSearchResult(x.Result, x.AnidbEpisodeID, x.MatchRating.ToString()))
+                .OfType<SearchResult>());
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -456,23 +475,53 @@ public sealed class TmdbLinkFixerService(
             .ToList();
     }
 
-    private static SearchResult ToSearchResult(ITmdbMovieSearchResult movie, int? anidbEpisodeId, string matchReason)
-        => new(
-            TmdbMediaKind.Movie, movie.ID, movie.Title, movie.OriginalTitle, movie.ReleasedAt,
-            Poster(movie.PosterPath), movie.Overview, (double)movie.UserRating,
-            TmdbLinkProbe.BuildUri(TmdbMediaKind.Movie, movie.ID).ToString(), anidbEpisodeId, matchReason);
+    private static SearchResult? ToSearchResult(MetadataSearchResult result, int? anidbEpisodeId, string matchReason)
+    {
+        var kind = result is MetadataMovieSearchResult ? TmdbMediaKind.Movie : TmdbMediaKind.Show;
+        if (!int.TryParse(result.ID.ID, out var id))
+            return null;
+        var partialDate = result switch
+        {
+            MetadataMovieSearchResult movie => movie.ReleasedAt,
+            MetadataSeriesSearchResult show => show.FirstAiredAt,
+            _ => null,
+        };
+        var date = partialDate is { } value && value.Year > 0
+            ? new DateOnly(value.Year, value.Month ?? 1, value.Day ?? 1)
+            : (DateOnly?)null;
+        return new(kind, id, result.Title ?? $"TMDB {id}", result.OriginalTitle ?? result.Title ?? $"TMDB {id}", date,
+            result.PosterUrl, result.Overview ?? string.Empty, (double)(result.UserRating ?? 0m),
+            TmdbLinkProbe.BuildUri(kind, id).ToString(), anidbEpisodeId, matchReason);
+    }
 
-    private static SearchResult ToSearchResult(ITmdbShowSearchResult show, string matchReason)
-        => new(
-            TmdbMediaKind.Show, show.ID, show.Title, show.OriginalTitle, show.FirstAiredAt,
-            Poster(show.PosterPath), show.Overview, (double)show.UserRating,
-            TmdbLinkProbe.BuildUri(TmdbMediaKind.Show, show.ID).ToString(), null, matchReason);
+    private async Task RemoveSourceAsync(LinkSnapshot source)
+    {
+        if (source.Kind == TmdbMediaKind.Show)
+        {
+            await linkingService.RemoveSeriesLink(new MetadataSeriesLinkRequest
+            {
+                Source = MetadataSource.TMDB,
+                EntityType = MetadataEntityType.Series,
+                ProviderID = TmdbGuid(MetadataEntityType.Series, source.TmdbId),
+                AnidbAnimeID = source.AnidbAnimeId,
+                Purge = false,
+            }).ConfigureAwait(false);
+            return;
+        }
 
-    private Task RemoveSourceAsync(LinkSnapshot source)
-        => source.Kind == TmdbMediaKind.Show
-            ? linkingService.RemoveShowLink(source.AnidbAnimeId, source.TmdbId, purge: false)
-            : Task.WhenAll(source.SourceAnidbEpisodeIds.Select(
-                episodeId => linkingService.RemoveMovieLinkForEpisode(episodeId, source.TmdbId, purge: false)));
+        var movieID = TmdbGuid(MetadataEntityType.Movie, source.TmdbId);
+        await Task.WhenAll(source.SourceAnidbEpisodeIds.Select(episodeId =>
+            linkingService.RemoveMovieLink(new MetadataEpisodeLinkRequest
+            {
+                Source = MetadataSource.TMDB,
+                EntityType = MetadataEntityType.Movie,
+                ProviderID = movieID,
+                ProviderSeriesID = movieID,
+                AnidbEpisodeID = episodeId,
+                AnidbAnimeID = source.AnidbAnimeId,
+                Purge = false,
+            }))).ConfigureAwait(false);
+    }
 
     // Reads the episode cross-references back after saving. SetEpisodeLink reports success even
     // when a later write (for example a show-link removal inside Shoko) deletes the xref again,
@@ -484,9 +533,10 @@ public sealed class TmdbLinkFixerService(
             throw new InvalidOperationException("The Shoko series no longer exists after saving episode mappings.");
 
         var linked = series.Episodes
-            .SelectMany(episode => episode.TmdbEpisodeCrossReferences
-                .Where(xref => xref.TmdbEpisodeID > 0)
-                .Select(xref => (Episode: episode.AnidbEpisodeID, xref.TmdbEpisodeID)))
+            .SelectMany(episode => episode.MetadataEpisodeCrossReferences
+                .Where(xref => xref is not null && xref.Source == MetadataSource.TMDB && xref.ProviderID!.IsNumericID &&
+                    int.TryParse(xref.ProviderID.ID, out _))
+                .Select(xref => (Episode: episode.AnidbEpisodeID, TmdbEpisodeID: int.Parse(xref.ProviderID!.ID))))
             .ToHashSet();
         var missing = expected
             .Where(mapping => !linked.Contains((mapping.AnidbEpisodeId, mapping.TmdbEpisodeId)))
@@ -534,6 +584,8 @@ public sealed class TmdbLinkFixerService(
     private static string? Poster(string? path) => string.IsNullOrWhiteSpace(path) ? null : $"https://image.tmdb.org/t/p/w185{path}";
     private static string? ImageUrl(Shoko.Abstractions.Metadata.Image.IImage? image)
         => image is { IsAvailable: true } ? $"/api/v3/Image/{image.ID}" : null;
+    private static MetadataGuid TmdbGuid(MetadataEntityType entityType, int id)
+        => new(MetadataSource.TMDB, entityType, id.ToString(System.Globalization.CultureInfo.InvariantCulture));
     private static IReadOnlyList<EpisodeOption> BuildEpisodeOptions(IReadOnlyList<IShokoEpisode> episodes, int? tmdbShowId)
         => episodes
             .OrderBy(x => x.Type)
@@ -544,10 +596,11 @@ public sealed class TmdbLinkFixerService(
                 x.Type == EpisodeType.Episode,
                 x.EpisodeNumber,
                 tmdbShowId.HasValue
-                    ? x.TmdbEpisodeCrossReferences
-                        .Where(y => y.TmdbShowID == tmdbShowId.Value && y.TmdbEpisodeID > 0)
+                    ? x.MetadataEpisodeCrossReferences
+                        .Where(y => y is not null && y.Source == MetadataSource.TMDB && y.ProviderParentID!.IsNumericID &&
+                            y.ProviderID!.IsNumericID && y.ProviderParentID.ID == tmdbShowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
                         .OrderBy(y => y.Ordering)
-                        .Select(y => y.TmdbEpisodeID)
+                        .Select(y => int.Parse(y.ProviderID!.ID))
                         .Distinct()
                         .ToList()
                     : []))

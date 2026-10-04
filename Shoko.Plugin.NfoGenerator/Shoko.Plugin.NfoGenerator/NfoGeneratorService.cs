@@ -2,8 +2,9 @@ using System.Globalization;
 using System.Xml.Linq;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Shoko.Abstractions.Metadata.Tmdb.CrossReferences;
 using Shoko.Abstractions.Config;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.CrossReferences;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Abstractions.Metadata.Events;
 using Shoko.Abstractions.Metadata.Services;
@@ -79,20 +80,20 @@ public sealed class NfoGeneratorService : IHostedService
         InvalidateTopologyForPaths(e.Video.Files.Select(f => f.Path));
         if (!_settings.Load().GenerateOnImport)
             return;
-        Queue(job => { job.Kind = NfoGenerationKind.Video; job.ID = e.Video.ID; });
+        Queue(job => { job.Kind = NfoGenerationKind.Video; job.ID = e.Video.LocalID; });
     }
 
     private void OnSeriesUpdated(object? sender, SeriesInfoUpdatedEventArgs e)
     {
         if (e.SeriesInfo is IShokoSeries series)
-            InvalidateTopologyForPaths(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList).SelectMany(v => v.Files).Select(f => f.Path));
+            InvalidateTopologyForPaths(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.Videos).SelectMany(v => v.Files).Select(f => f.Path));
         if (!_settings.Load().GenerateOnMetadataUpdate)
             return;
         if (e.SeriesInfo is not IShokoSeries seriesToQueue)
             return;
         // Metadata updates rewrite even unchanged files so the media library
         // sees a fresh mtime after a metadata change.
-        Queue(job => { job.Kind = NfoGenerationKind.Series; job.ID = seriesToQueue.ID; job.Force = true; });
+        Queue(job => { job.Kind = NfoGenerationKind.Series; job.ID = seriesToQueue.LocalID; job.Force = true; });
     }
 
     private void OnReleaseDeleted(object? sender, VideoReleaseDeletedEventArgs e)
@@ -120,11 +121,11 @@ public sealed class NfoGeneratorService : IHostedService
         => GenerateForSeriesCore(series, force);
 
     private int GenerateForSeriesCore(IShokoSeries series, bool force, GenerationPass? pass = null, bool sweep = true, LibraryIndex? libraryIndex = null)
-        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList), force, pass, sweep, libraryIndex);
+        => GenerateForVideos(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.Videos), force, pass, sweep, libraryIndex);
 
     /// <summary>Generates NFO files for every available video file of an episode.</summary>
     public int GenerateForEpisode(IShokoEpisode episode, bool force = false)
-        => GenerateForVideos(episode.VideoList, force);
+        => GenerateForVideos(episode.Videos, force);
 
     /// <summary>Generates NFO files for every available video file of a video.</summary>
     public int GenerateForVideo(IVideo video, bool force = false)
@@ -165,7 +166,7 @@ public sealed class NfoGeneratorService : IHostedService
         if (seriesIndex < run.Series.Count)
         {
             var series = run.Series[seriesIndex];
-            _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", seriesIndex + 1, run.Series.Count, LanguageResolver.Title(series, run.TitleLanguage), series.ID);
+            _logger.LogInformation("Processing series {Index}/{Total}: {Title} ({SeriesID})", seriesIndex + 1, run.Series.Count, LanguageResolver.Title(series, run.TitleLanguage), series.LocalID);
             run.Written += GenerateForSeriesCore(series, force, run.Pass, sweep: false, libraryIndex: run.Index);
             if (seriesIndex + 1 < run.Series.Count)
             {
@@ -399,14 +400,20 @@ public sealed class NfoGeneratorService : IHostedService
     /// </summary>
     private static bool IsMovie(IShokoSeries series, IShokoEpisode? episode)
     {
-        if (episode?.TmdbMovieCrossReferences.Count > 0)
+        if (episode?.MetadataMovieCrossReferences.Any(IsTmdbMovieReference) == true)
             return true;
-        if (series.TmdbMovieCrossReferences.Count > 0)
+        if (series.MetadataMovieCrossReferences.Any(IsTmdbMovieReference))
             return true;
-        if (series.TmdbShowCrossReferences.Count > 0)
+        if (series.MetadataSeriesCrossReferences.Any(IsTmdbSeriesReference))
             return false;
         return series.Type == AnimeType.Movie;
     }
+
+    private static bool IsTmdbMovieReference(IMetadataMovieCrossReference reference)
+        => reference.Source == MetadataSource.TMDB && reference.ProviderID?.IsNumericID == true;
+
+    private static bool IsTmdbSeriesReference(IMetadataSeriesCrossReference reference)
+        => reference.Source == MetadataSource.TMDB && reference.ProviderID?.IsNumericID == true;
 
     private void RegisterCanonicalSeries(IVideoFile file, GenerationPass pass, LibraryIndex? libraryIndex)
     {
@@ -427,11 +434,11 @@ public sealed class NfoGeneratorService : IHostedService
         var linkedSeries = SelectLinkedTmdbSeries(series, episode).ToList();
         if (linkedSeries.Count > 0)
         {
-            if (linkedSeries.All(candidate => candidate.ID != series.ID))
+            if (linkedSeries.All(candidate => candidate.LocalID != series.LocalID))
                 linkedSeries.Add(series);
             foreach (var candidate in linkedSeries)
                 foreach (var candidateEpisode in candidate.Episodes.OfType<IShokoEpisode>())
-                    foreach (var candidateFile in candidateEpisode.VideoList.SelectMany(v => v.Files).Where(f => f.IsAvailable))
+                    foreach (var candidateFile in candidateEpisode.Videos.SelectMany(v => v.Files).Where(f => f.IsAvailable))
                         RegisterCanonicalSeries(candidate, candidateEpisode, candidateFile, scope, pass, libraryIndex);
             pass.CanonicalScopesDiscovered.Add(scope);
             if (pass.UseBurstCache)
@@ -442,7 +449,7 @@ public sealed class NfoGeneratorService : IHostedService
             return;
         foreach (var candidate in _metadataService.GetAllShokoSeries())
             foreach (var candidateEpisode in candidate.Episodes.OfType<IShokoEpisode>())
-                foreach (var candidateFile in candidateEpisode.VideoList.SelectMany(v => v.Files).Where(f => f.IsAvailable))
+                foreach (var candidateFile in candidateEpisode.Videos.SelectMany(v => v.Files).Where(f => f.IsAvailable))
                     RegisterCanonicalSeries(candidate, candidateEpisode, candidateFile, scope, pass, libraryIndex);
         if (pass.UseBurstCache)
             CacheBurstScope(scope, pass, null, capturedVersion);
@@ -458,27 +465,30 @@ public sealed class NfoGeneratorService : IHostedService
             pass.LinkedShowFolders[scope] = folders = [];
         if (!folders.Contains(folder, StringComparer.OrdinalIgnoreCase))
             folders.Add(folder);
-        if (!pass.CanonicalSeries.TryGetValue(scope, out var canonical) || series.ID < canonical.ID)
+        if (!pass.CanonicalSeries.TryGetValue(scope, out var canonical) || series.LocalID < canonical.LocalID)
             pass.CanonicalSeries[scope] = series;
     }
 
-    private static ITmdbEpisodeCrossReference? SelectTmdbEpisodeCrossReference(IShokoEpisode episode)
-        => episode.TmdbEpisodeCrossReferences
+    private static IMetadataEpisodeCrossReference? SelectTmdbEpisodeCrossReference(IShokoEpisode episode)
+        => episode.MetadataEpisodeCrossReferences
+            .Where(x => x.Source == MetadataSource.TMDB && x.ProviderID?.IsNumericID == true && x.ProviderParentID?.IsNumericID == true)
             .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
             .ThenBy(x => x.Ordering)
-            .ThenBy(x => x.TmdbEpisodeID)
+            .ThenBy(x => ParseTmdbId(x.ProviderID) ?? int.MaxValue)
             .FirstOrDefault();
 
-    private static ITmdbMovieCrossReference? SelectTmdbMovieCrossReference(IEnumerable<ITmdbMovieCrossReference> references)
+    private static IMetadataMovieCrossReference? SelectTmdbMovieCrossReference(IEnumerable<IMetadataMovieCrossReference> references)
         => references
+            .Where(IsTmdbMovieReference)
             .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
-            .ThenBy(x => x.TmdbMovieID)
+            .ThenBy(x => ParseTmdbId(x.ProviderID) ?? int.MaxValue)
             .FirstOrDefault();
 
-    private static ITmdbShowCrossReference? SelectTmdbShowCrossReference(IEnumerable<ITmdbShowCrossReference> references)
+    private static IMetadataSeriesCrossReference? SelectTmdbShowCrossReference(IEnumerable<IMetadataSeriesCrossReference> references)
         => references
+            .Where(IsTmdbSeriesReference)
             .OrderBy(x => x.MatchRating == MatchRating.UserVerified ? 0 : 1)
-            .ThenBy(x => x.TmdbShowID)
+            .ThenBy(x => ParseTmdbId(x.ProviderID) ?? int.MaxValue)
             .FirstOrDefault();
 
     private static IEnumerable<IShokoSeries> SelectLinkedTmdbSeries(IShokoSeries series, IShokoEpisode episode)
@@ -487,17 +497,16 @@ public sealed class NfoGeneratorService : IHostedService
         // is the complete linked-series set. Do not combine it with direct video
         // links or a second cross-reference.
         var episodeCrossReference = SelectTmdbEpisodeCrossReference(episode);
-        var tmdbShow = episodeCrossReference is not null
-            ? episodeCrossReference.TmdbShow
-            : SelectTmdbShowCrossReference(series.TmdbShowCrossReferences)?.TmdbShow;
+        var tmdbShow = episodeCrossReference?.Provider as ISeries
+            ?? SelectTmdbShowCrossReference(series.MetadataSeriesCrossReferences)?.Provider as ISeries;
         return tmdbShow?.ShokoSeries?
-            .DistinctBy(x => x.ID)
+            .DistinctBy(x => x.LocalID)
             ?? [];
     }
 
     private static int? ResolveTmdbShowId(IShokoSeries series, IShokoEpisode episode)
-        => SelectTmdbEpisodeCrossReference(episode)?.TmdbShowID
-            ?? SelectTmdbShowCrossReference(series.TmdbShowCrossReferences)?.TmdbShowID;
+        => ParseTmdbId(SelectTmdbEpisodeCrossReference(episode)?.ProviderParentID)
+            ?? ParseTmdbId(SelectTmdbShowCrossReference(series.MetadataSeriesCrossReferences)?.ProviderID);
 
     private static int? ResolveTmdbShowId(IVideoFile file)
     {
@@ -507,8 +516,11 @@ public sealed class NfoGeneratorService : IHostedService
     }
 
     private static int? ResolveTmdbMovieId(IShokoSeries series, IShokoEpisode? episode)
-        => (episode is null ? null : SelectTmdbMovieCrossReference(episode.TmdbMovieCrossReferences)?.TmdbMovieID)
-            ?? SelectTmdbMovieCrossReference(series.TmdbMovieCrossReferences)?.TmdbMovieID;
+        => (episode is null ? null : ParseTmdbId(SelectTmdbMovieCrossReference(episode.MetadataMovieCrossReferences)?.ProviderID))
+            ?? ParseTmdbId(SelectTmdbMovieCrossReference(series.MetadataMovieCrossReferences)?.ProviderID);
+
+    private static int? ParseTmdbId(MetadataGuid? id)
+        => id is { IsNumericID: true } && int.TryParse(id.ID, out var value) ? value : null;
 
     /// <summary>
     /// Resolves a conventional show root without moving media. Multiple local
@@ -527,7 +539,7 @@ public sealed class NfoGeneratorService : IHostedService
             ?? libraryIndex?.ShowFolders.GetValueOrDefault(scope)?.AsEnumerable()
             ?? _metadataService.GetAllShokoSeries()
             .SelectMany(s => s.Episodes.OfType<IShokoEpisode>().Where(e => ResolveTmdbShowId(s, e) == tmdbShowId)
-                .SelectMany(e => e.VideoList)
+                .SelectMany(e => e.Videos)
                 .SelectMany(v => v.Files)
                 .Where(f => f.IsAvailable && Path.GetDirectoryName(f.Path) is not null)
                 .Select(f => Path.GetDirectoryName(f.Path)!));
@@ -666,7 +678,7 @@ public sealed class NfoGeneratorService : IHostedService
             if (pass.LinkedShowFolders.TryGetValue(scope, out var folders))
                 foreach (var folder in folders.Where(folder => !cached.Folders.Contains(folder, StringComparer.OrdinalIgnoreCase)))
                     cached.Folders.Add(folder);
-            if (pass.CanonicalSeries.TryGetValue(scope, out var canonical) && (cached.Canonical is null || canonical.ID < cached.Canonical.ID))
+            if (pass.CanonicalSeries.TryGetValue(scope, out var canonical) && (cached.Canonical is null || canonical.LocalID < cached.Canonical.LocalID))
                 cached.Canonical = canonical;
         }
     }
@@ -753,21 +765,22 @@ public sealed class NfoGeneratorService : IHostedService
     private static EpisodeNfo BuildEpisodeNfo(IShokoEpisode episode, IShokoSeries series, string? thumb, NfoGeneratorSettings cfg)
     {
         var tmdbEpisode = SelectTmdbEpisodeCrossReference(episode);
-        var ordering = tmdbEpisode?.TmdbEpisode?.PreferredOrdering ?? tmdbEpisode?.TmdbEpisode?.Ordering;
+        var seasonNumber = tmdbEpisode?.SeasonNumber;
+        var episodeNumber = tmdbEpisode?.EpisodeNumber;
         return new()
         {
             Title = LanguageResolver.Title(episode, cfg.TitleLanguage),
             ShowTitle = LanguageResolver.Title(series, cfg.TitleLanguage),
             Plot = LanguageResolver.Description(episode, cfg.DescriptionLanguage) ?? LanguageResolver.Description(series, cfg.DescriptionLanguage),
             Aired = episode.AirDate?.ToString("yyyy-MM-dd"),
-            Season = ordering?.SeasonNumber ?? episode.SeasonNumber,
-            Episode = ordering?.EpisodeNumber ?? episode.EpisodeNumber,
+            Season = seasonNumber ?? episode.SeasonNumber,
+            Episode = episodeNumber ?? episode.EpisodeNumber,
             RuntimeMinutes = RuntimeMinutes(episode.Runtime),
             Rating = PositiveRating(episode.Rating),
             Votes = PositiveVotes(episode.RatingVotes),
             AnidbId = episode.AnidbEpisodeID.ToString(),
-            ShokoId = episode.ID.ToString(),
-            TmdbId = tmdbEpisode?.TmdbEpisodeID.ToString(),
+            ShokoId = episode.LocalID.ToString(),
+            TmdbId = tmdbEpisode is null ? null : ParseTmdbId(tmdbEpisode.ProviderID)?.ToString(CultureInfo.InvariantCulture),
             Thumb = thumb,
         };
     }
@@ -786,7 +799,7 @@ public sealed class NfoGeneratorService : IHostedService
             Rating = PositiveRating(series.Rating),
             Votes = PositiveVotes(series.RatingVotes),
             AnidbId = series.AnidbAnimeID.ToString(),
-            ShokoId = series.ID.ToString(),
+            ShokoId = series.LocalID.ToString(),
             TmdbId = tmdbId?.ToString(),
             Studios = series.Studios.Select(s => s.Name).ToList(),
             Art = art,
@@ -1356,7 +1369,7 @@ public sealed class NfoGeneratorService : IHostedService
     {
         var seriesIds = _videoService.GetVideoFilesByAbsolutePath(folder)
             .Where(f => string.Equals(Path.GetDirectoryName(f.Path), folder, StringComparison.OrdinalIgnoreCase))
-            .Select(f => f.Video?.Episodes.FirstOrDefault()?.Series?.ID)
+            .Select(f => f.Video?.Episodes.FirstOrDefault()?.Series?.LocalID)
             .Where(id => id is not null)
             .Distinct()
             .ToList();
@@ -1417,7 +1430,7 @@ public sealed class NfoGeneratorService : IHostedService
         var cleanup = BuildCleanupFileIndex(managedFolders, _videoService.GetAllVideoFiles());
         var showFolders = new Dictionary<ShowScope, List<string>>();
         var index = new LibraryIndex(managedFolders, showFolders, cleanup);
-        foreach (var file in seriesList.SelectMany(s => s.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.VideoList).SelectMany(v => v.Files)))
+        foreach (var file in seriesList.SelectMany(s => s.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.Videos).SelectMany(v => v.Files)))
         {
             if (!file.IsAvailable || Path.GetDirectoryName(file.Path) is null || file.Video is null)
                 continue;

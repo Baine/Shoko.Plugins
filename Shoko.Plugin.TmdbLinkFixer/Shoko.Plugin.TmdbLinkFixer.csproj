@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>Shoko.Plugin.TmdbLinkFixer</AssemblyName>
     <RootNamespace>Shoko.Plugin.TmdbLinkFixer</RootNamespace>
-    <Version>0.1.7</Version>
+    <Version>0.1.8</Version>
     <Authors>Baine</Authors>
     <Description>Scans AniDB to TMDB links, compares possible replacements, and applies only replacements explicitly confirmed by an administrator.</Description>
     <RepositoryUrl>https://github.com/Baine/Shoko.Plugins</RepositoryUrl>
@@ -16,8 +16,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.81" ExcludeAssets="runtime" />
-    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.2.1" PrivateAssets="all" />
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.98" ExcludeAssets="runtime" />
+    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.3.2" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

@@ -23,7 +23,7 @@ public sealed class AniDBWatchImporter(
         var users = userService.GetUsers().Where(u => u.IsAnidbUser).ToList();
         return users.Count switch
         {
-            1 => new(users[0].ID, users[0].Username, users[0].IsAdmin),
+            1 => new(users[0].LocalID, users[0].Username, users[0].IsAdmin),
             0 => throw new InvalidOperationException(
                 "No Shoko user is linked to the AniDB login. Enable AniDB for a user in Shoko's user settings."),
             _ => throw new InvalidOperationException(
@@ -45,7 +45,7 @@ public sealed class AniDBWatchImporter(
         var result = new ImportResult
         {
             DryRun = dryRun,
-            UserId = user.ID,
+            UserId = user.LocalID,
             UserName = user.Username,
             TotalXmlRecords = parsed.Total,
             SkippedNoViewDate = parsed.NoDate,
@@ -129,7 +129,7 @@ public sealed class AniDBWatchImporter(
                     result.Errors++;
                     logger.LogError(
                         "Shoko did not persist watched status for AniDB FID {Fid}, EID {Eid}, user {UserId}",
-                        record.FileId, record.EpisodeId, user.ID);
+                        record.FileId, record.EpisodeId, user.LocalID);
                     AddIssue(result, record, "SaveVerificationFailed",
                         $"Shoko returned without an error, but EID {record.EpisodeId} is still unwatched for user {user.Username} (ID {user.ID}).");
                     continue;
@@ -140,7 +140,7 @@ public sealed class AniDBWatchImporter(
             catch (Exception ex)
             {
                 result.Errors++;
-                logger.LogError(ex, "Failed importing AniDB FID {Fid}, EID {Eid} for AniDB user {UserId}", record.FileId, record.EpisodeId, user.ID);
+                logger.LogError(ex, "Failed importing AniDB FID {Fid}, EID {Eid} for AniDB user {UserId}", record.FileId, record.EpisodeId, user.LocalID);
                 AddIssue(result, record, "ImportError", ex.Message);
             }
         }

@@ -1,4 +1,4 @@
-# Shoko.Plugin.MovieMissingFilter v0.12.1
+# Shoko.Plugin.MovieMissingFilter v0.12.2
 
 Runtime-only enhancement for Shoko Server daily/dev Missing Episodes.
 
