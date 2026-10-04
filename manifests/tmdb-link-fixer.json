@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.8",
+      "tag": "tmdb-link-fixer/v0.1.8",
+      "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
+      "released_at": "2026-10-04T09:00:52Z",
+      "channel": "Stable",
+      "release_notes": "Migrate to the Shoko.Abstractions 6.0.0-alpha.98 metadata linking APIs and update Shoko.BuildTools.Targets to 0.3.2.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.8/TmdbLinkFixer-v0.1.8_linux-arm64.zip",
+          "checksum": "7fe23de042e8bafd3e35aecc3f3c0f939267df3095328b600206dbb304ab42c1"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.8/TmdbLinkFixer-v0.1.8_linux-x64.zip",
+          "checksum": "9b773ab10506225b9e5134f6ada97aff4e040523285a3d06fa93f96808135a86"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.8/TmdbLinkFixer-v0.1.8_win-x64.zip",
+          "checksum": "6a061ce3529df7e05ee5aea8de6e1d464f462cfe5b1779acd2fb3276ff0099c0"
+        }
+      ]
+    },
+    {
       "version": "0.1.7",
       "tag": "tmdb-link-fixer/v0.1.7",
       "source_revision": "6a61111b0c79839637e64c61fa5c0ae6dad84d0d",
