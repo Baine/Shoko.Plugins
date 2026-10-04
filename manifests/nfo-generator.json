@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.16",
+      "tag": "nfo-generator/v0.1.16",
+      "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
+      "released_at": "2026-10-04T09:00:51Z",
+      "channel": "Stable",
+      "release_notes": "Migrate to Shoko.Abstractions 6.0.0-alpha.98 metadata cross-references and overviews; update Shoko.BuildTools.Targets to 0.3.2.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.16/NfoGenerator-v0.1.16_linux-arm64.zip",
+          "checksum": "5c5aa94efaa4685fe8a3832798c40417be398a67086ffbe27fab5feb80854edb"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.16/NfoGenerator-v0.1.16_linux-x64.zip",
+          "checksum": "3fc39d2e95eb05c8d65e77b095eae278f99a116ad90d9c054bda095bdf35c47f"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.16/NfoGenerator-v0.1.16_win-x64.zip",
+          "checksum": "1b29bc2e5e9bd27c6f4e3316adc03e90899bd1000ea60e93d8feb1ba118cf586"
+        }
+      ]
+    },
+    {
       "version": "0.1.15",
       "tag": "nfo-generator/v0.1.15",
       "source_revision": "42d580944f3def32c2a9d1ba2df7138329623b87",
