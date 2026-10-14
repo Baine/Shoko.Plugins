@@ -14,6 +14,34 @@
   "dependencies": [],
   "releases": [
     {
+      "version": "0.12.3",
+      "tag": "movie-missing-filter/v0.12.3",
+      "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
+      "released_at": "2026-10-14T05:57:55Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.105.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.3/MovieMissingFilter-v0.12.3_linux-arm64.zip",
+          "checksum": "5bb128fca938c27ca057d879db64cd785b01c5032cf5cbee1cca227b5d147f27"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.3/MovieMissingFilter-v0.12.3_linux-x64.zip",
+          "checksum": "ec1cfde4240bfa78424dedcb41389294dd8a785f3e8c91f204bd75c77f6b3c1e"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/movie-missing-filter/v0.12.3/MovieMissingFilter-v0.12.3_win-x64.zip",
+          "checksum": "d1eb0effcd731b8138a9654e5254da8d90581b85d9c66ea4294ee544d17efe97"
+        }
+      ]
+    },
+    {
       "version": "0.12.2",
       "tag": "movie-missing-filter/v0.12.2",
       "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
