@@ -11,8 +11,8 @@
 Run from this directory:
 
 ```bash
-# AniDB Watch History: requires a ShokoServer source checkout.
-./Shoko.Plugin.AniDBWatchHistory/build.sh /absolute/path/to/ShokoServer
+# AniDB Watch History: builds against the Shoko.Abstractions NuGet package.
+./Shoko.Plugin.AniDBWatchHistory/build.sh
 
 # Movie Missing Filter: cleans and recreates its deployable publish output.
 ./Shoko.Plugin.MovieMissingFilter/build.sh
@@ -25,7 +25,7 @@ dotnet build Shoko.Plugin.NfoGenerator/Shoko.Plugin.NfoGenerator/Shoko.Plugin.Nf
 dotnet run --project Shoko.Plugin.NfoGenerator/tools/NfoGenerator.SelfCheck/NfoGenerator.SelfCheck.csproj -c Release
 ```
 
-- `Shoko.Plugin.AniDBWatchHistory` defaults `ShokoServerRoot` to `../ShokoServer`; use `-p:ShokoServerRoot=...` (or the build script) for another checkout. Rebuild it against the exact Shoko Daily version it will run with.
+- `Shoko.Plugin.AniDBWatchHistory` builds against the `Shoko.Abstractions` NuGet package and needs no ShokoServer checkout. Rebuild it against the exact Shoko Daily version it will run with.
 - `Shoko.Plugin.MovieMissingFilter/build.sh` produces the installable contents in `dist/`; use `build-docker.sh` when a local .NET 10 SDK is unavailable.
 - The root `manifest.json` is an aggregate array of `{id, type: "manifest", url}` refs pointing to each plugin's manifest in `manifests/`. Each release workflow updates only its own `manifests/<plugin>.json`; do not hand-edit any manifest `releases` array.
 

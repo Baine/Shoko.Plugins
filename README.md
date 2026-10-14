@@ -33,8 +33,8 @@ manifest file, so the aggregate stays stable and maintenance is per-plugin:
 Run these commands from the repository root:
 
 ```bash
-# AniDB Watch History (requires a ShokoServer source checkout)
-./Shoko.Plugin.AniDBWatchHistory/build.sh /absolute/path/to/ShokoServer
+# AniDB Watch History
+./Shoko.Plugin.AniDBWatchHistory/build.sh
 
 # Movie Missing Filter
 ./Shoko.Plugin.MovieMissingFilter/build.sh

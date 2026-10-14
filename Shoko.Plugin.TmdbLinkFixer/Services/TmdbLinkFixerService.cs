@@ -160,9 +160,7 @@ public sealed class TmdbLinkFixerService(
                 await refreshService.RefreshEntry(targetShowId, force: true, new MetadataRefreshOptions
                 {
                     DownloadImages = true,
-                    DownloadCrewAndCast = false,
                     DownloadAlternateOrdering = false,
-                    DownloadNetworks = false,
                     QuickRefresh = false,
                     Reason = MetadataRefreshReason.Requested,
                 }, immediate: true, prioritize: true, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -252,8 +250,6 @@ public sealed class TmdbLinkFixerService(
                 await refreshService.RefreshEntry(targetMovieId, force: true, new MetadataRefreshOptions
                 {
                     DownloadImages = true,
-                    DownloadCrewAndCast = false,
-                    DownloadCollections = false,
                     Reason = MetadataRefreshReason.Requested,
                 }, immediate: true, prioritize: true, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
                 await linkingService.AddMovieLink(new MetadataEpisodeLinkRequest

@@ -36,11 +36,11 @@ Version 1.0.6 adds complete Shoko package identity metadata to release builds so
 
 ## Build
 
-Requirements: the .NET SDK used by the checked-out Shoko Daily source (currently .NET 10).
+Requirements: the .NET 10 SDK. The plugin builds against the `Shoko.Abstractions` NuGet package, so no ShokoServer source checkout is needed.
 Run the build from the repository root:
 
 ```bash
-./Shoko.Plugin.AniDBWatchHistory/build.sh /absolute/path/to/ShokoServer
+./Shoko.Plugin.AniDBWatchHistory/build.sh
 ```
 
 Copy `Shoko.Plugin.AniDBWatchHistory/bin/Release/net10.0/Shoko.Plugin.AniDBWatchHistory.dll` to a separate directory below Shoko's user plugin directory, then restart Shoko.
@@ -75,5 +75,5 @@ If Shoko has no user with the AniDB login option enabled, the endpoint returns H
 
 ## Compatibility pin
 
-The source was verified against ShokoServer commit `1d1f6d57420d035d2c1b70936fccaff35eb6dab7`.
-Daily can introduce breaking abstraction changes; rebuild the plugin against the exact Shoko Daily checkout you run.
+The plugin builds against the `Shoko.Abstractions` NuGet package (currently `6.0.0-alpha.105`) and is verified against the Shoko Daily build that ships it.
+Daily can introduce breaking abstraction changes; rebuild the plugin against the exact `Shoko.Abstractions` version your Shoko Daily install provides.

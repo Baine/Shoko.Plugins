@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Shoko.Plugin.AniDBWatchHistory</AssemblyName>
     <RootNamespace>Shoko.Plugin.AniDBWatchHistory</RootNamespace>
-    <Version>1.0.7</Version>
+    <Version>1.0.8</Version>
     <Authors>Fioon</Authors>
     <Description>Imports watched dates from an AniDB MyList XML export into Shoko Daily.</Description>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.98"
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.105"
                       ExcludeAssets="runtime" />
     <PackageReference Include="Shoko.BuildTools.Targets" Version="0.3.2" PrivateAssets="all" />
   </ItemGroup>

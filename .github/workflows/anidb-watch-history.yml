@@ -28,15 +28,8 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Checkout pinned Shoko Daily
-        uses: actions/checkout@v6
-        with:
-          repository: ShokoAnime/ShokoServer
-          ref: 1d1f6d57420d035d2c1b70936fccaff35eb6dab7
-          path: ShokoServer
-
       - name: Build
-        run: dotnet build Shoko.Plugin.AniDBWatchHistory/AniDBWatchHistory.Daily.csproj -c Release -p:ShokoServerRoot="$GITHUB_WORKSPACE/ShokoServer"
+        run: dotnet build Shoko.Plugin.AniDBWatchHistory/AniDBWatchHistory.Daily.csproj -c Release
 
   publish:
     if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'anidb-watch-history/v')
@@ -61,13 +54,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-
-      - name: Checkout pinned Shoko Daily
-        uses: actions/checkout@v6
-        with:
-          repository: ShokoAnime/ShokoServer
-          ref: 1d1f6d57420d035d2c1b70936fccaff35eb6dab7
-          path: ShokoServer
 
       - name: Validate version
         id: vars
@@ -107,8 +93,7 @@ jobs:
             -c Release \
             -r "${{ matrix.rid }}" \
             --no-self-contained \
-            -o "$PUBLISH_DIR" \
-            -p:ShokoServerRoot="$GITHUB_WORKSPACE/ShokoServer"
+            -o "$PUBLISH_DIR"
 
       - name: Package ZIP
         id: package
@@ -150,13 +135,6 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Checkout pinned Shoko Daily
-        uses: actions/checkout@v6
-        with:
-          repository: ShokoAnime/ShokoServer
-          ref: 1d1f6d57420d035d2c1b70936fccaff35eb6dab7
-          path: ShokoServer
-
       - name: Update manifest
         shell: bash
         env:
@@ -167,7 +145,7 @@ jobs:
           set -euo pipefail
           MANIFEST='manifests/anidb-watch-history.json'
           PACKAGE_UUID='0d89b27b-d4e7-4e60-97ca-696a59f9fd5e'
-          ABSTRACTIONS_CSPROJ='ShokoServer/Shoko.Abstractions/Shoko.Abstractions.csproj'
+          ABSTRACTIONS_CSPROJ='Shoko.Plugin.AniDBWatchHistory/AniDBWatchHistory.Daily.csproj'
           TAG_VERSION="${TAG#anidb-watch-history/}"
           VERSION="${TAG_VERSION#v}"
 
@@ -179,9 +157,9 @@ jobs:
           fi
 
           SOURCE_REVISION="$(git rev-list -n 1 "$TAG")"
-          ABSTRACTION_VERSION="$(grep -oPm1 '(?<=<Version>)[^<]+' "$ABSTRACTIONS_CSPROJ" || true)"
+          ABSTRACTION_VERSION="$(grep -oPm1 'PackageReference Include="Shoko\.Abstractions" Version="\K[^"]+' "$ABSTRACTIONS_CSPROJ" || true)"
           if [[ -z "$ABSTRACTION_VERSION" ]]; then
-            echo "Missing Shoko.Abstractions Version in $ABSTRACTIONS_CSPROJ" >&2
+            echo "Missing Shoko.Abstractions version in $ABSTRACTIONS_CSPROJ" >&2
             exit 1
           fi
           ABSTRACTION_VERSION="${ABSTRACTION_VERSION%%-*}"

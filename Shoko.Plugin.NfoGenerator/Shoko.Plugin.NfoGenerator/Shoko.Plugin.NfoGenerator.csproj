@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Shoko.Plugin.NfoGenerator</RootNamespace>
     <AssemblyName>Shoko.Plugin.NfoGenerator</AssemblyName>
-    <Version>0.1.16</Version>
+    <Version>0.1.17</Version>
     <Authors>Baine</Authors>
     <RepositoryUrl>https://github.com/Baine/Shoko.Plugins</RepositoryUrl>
   </PropertyGroup>
@@ -30,7 +30,7 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" ExcludeAssets="runtime" />
-    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.98" ExcludeAssets="runtime" />
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.105" ExcludeAssets="runtime" />
     <PackageReference Include="Shoko.QueueProcessor" Version="6.0.0-alpha.9" ExcludeAssets="runtime" />
   </ItemGroup>
 
