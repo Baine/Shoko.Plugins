@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.9",
+      "tag": "tmdb-link-fixer/v0.1.9",
+      "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
+      "released_at": "2026-10-14T06:06:35Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.105.\n\nRemoved use of the MetadataRefreshOptions members that were dropped in alpha.105: DownloadCrewAndCast, DownloadNetworks, and DownloadCollections.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.9/TmdbLinkFixer-v0.1.9_linux-arm64.zip",
+          "checksum": "7ecd2a3e6a5a47baa913bf57054e67e87f6af10ddbf4e2809a0b2f183d8bb190"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.9/TmdbLinkFixer-v0.1.9_linux-x64.zip",
+          "checksum": "c149103f6fe1d84586a47392e682b425bef649ad6f7870608da1557b2ed253a1"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.9/TmdbLinkFixer-v0.1.9_win-x64.zip",
+          "checksum": "79c5c2d4e58bc7b295ee20dd0a335b3773a84f9f9af0b13155d6efdc271bfe13"
+        }
+      ]
+    },
+    {
       "version": "0.1.8",
       "tag": "tmdb-link-fixer/v0.1.8",
       "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
