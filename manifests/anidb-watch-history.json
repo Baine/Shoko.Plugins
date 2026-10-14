@@ -13,6 +13,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "1.0.8",
+      "tag": "anidb-watch-history/v1.0.8",
+      "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
+      "released_at": "2026-10-14T05:42:17Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.105.\n\nThe plugin now builds against the Shoko.Abstractions NuGet package, so the pinned ShokoServer source checkout is no longer required. The build script, the CI workflow, and the documentation were updated accordingly.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.8/AniDBWatchHistory-v1.0.8_linux-arm64.zip",
+          "checksum": "9b490966d8cdcf161eeb4ad87c6223fa15d354048bacba062bb25826bb0cc1b4"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.8/AniDBWatchHistory-v1.0.8_linux-x64.zip",
+          "checksum": "01c469d3d812361df21fcd59ce47ca5a2dcc395fea2296eb7a1e4ab953723585"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.8/AniDBWatchHistory-v1.0.8_win-x64.zip",
+          "checksum": "affa5d6e8999d4c7650fc3d7f413c4f4c1aac8a73f75f905931ddaba56380509"
+        }
+      ]
+    },
+    {
       "version": "1.0.7",
       "tag": "anidb-watch-history/v1.0.7",
       "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
