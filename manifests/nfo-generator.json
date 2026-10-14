@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.17",
+      "tag": "nfo-generator/v0.1.17",
+      "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
+      "released_at": "2026-10-14T06:05:06Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.105.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.17/NfoGenerator-v0.1.17_linux-arm64.zip",
+          "checksum": "640c06c24e0c2144fe9030ae338a0fde63785e9df94dda80c4d79f4bf42dd131"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.17/NfoGenerator-v0.1.17_linux-x64.zip",
+          "checksum": "d3391dfbbf3a892a5f65ef0488d12e2313d3c045270b312de9bac435e4067643"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.17/NfoGenerator-v0.1.17_win-x64.zip",
+          "checksum": "fb9af31f183379ad13504932f6d9550aa8cc39dfdd17c29123aa1eaeed5914a2"
+        }
+      ]
+    },
+    {
       "version": "0.1.16",
       "tag": "nfo-generator/v0.1.16",
       "source_revision": "18b8f1bce3c00d5f5470a9794828f6a2dfdfeb41",
