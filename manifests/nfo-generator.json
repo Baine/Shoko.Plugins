@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.18",
+      "tag": "nfo-generator/v0.1.18",
+      "source_revision": "96a931847df6a23e8f0a95a08eac895d18d95945",
+      "released_at": "2026-10-18T08:40:35Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.108 and Shoko.QueueProcessor 6.0.0-alpha.13.\n\nAdopted the new opt-in configuration visibility model: the settings are now registered as the plugin's main configuration and explicitly marked visible, so the settings page embedded under Settings → Plugins keeps resolving its configuration.\n\nThe import and metadata-update gates are evaluated before the inline topology invalidation, so a disabled gate no longer walks the series → episodes → videos → files graph on the thread of whichever job raised the event.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.18/NfoGenerator-v0.1.18_linux-arm64.zip",
+          "checksum": "3db93f2f09508f01ac346d7ec9b7d99139681ba36745eeda39a31ca7b3cc609a"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.18/NfoGenerator-v0.1.18_linux-x64.zip",
+          "checksum": "11fd108c4210607cf97f08379f8f352b7d11a1d2187954d2646657436f18cc6e"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.18/NfoGenerator-v0.1.18_win-x64.zip",
+          "checksum": "a7da489f2664578644ac3d51dffb872791de4816ec0fe23644adcaee545fbb91"
+        }
+      ]
+    },
+    {
       "version": "0.1.17",
       "tag": "nfo-generator/v0.1.17",
       "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
