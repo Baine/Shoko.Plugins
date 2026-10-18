@@ -13,6 +13,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "1.0.9",
+      "tag": "anidb-watch-history/v1.0.9",
+      "source_revision": "96a931847df6a23e8f0a95a08eac895d18d95945",
+      "released_at": "2026-10-18T08:40:33Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.108.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.9/AniDBWatchHistory-v1.0.9_linux-arm64.zip",
+          "checksum": "2eca65e5c5bbcb9487ccd8ac6edc156839eedd1a0b69853c7ee57d2654315a98"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.9/AniDBWatchHistory-v1.0.9_linux-x64.zip",
+          "checksum": "0951ec125850cef089c4d3f9d4413461bba67b7bbfdf5f564d80b912ef512abb"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/anidb-watch-history/v1.0.9/AniDBWatchHistory-v1.0.9_win-x64.zip",
+          "checksum": "f708bb69038fcff52d4cb8676d0c09e0dbc974325b06b9d9b56ef8398e456f24"
+        }
+      ]
+    },
+    {
       "version": "1.0.8",
       "tag": "anidb-watch-history/v1.0.8",
       "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
