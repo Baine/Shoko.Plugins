@@ -1,12 +1,14 @@
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Plugin.Models;
+using Shoko.Plugin.NfoGenerator.Config;
 
 namespace Shoko.Plugin.NfoGenerator;
 
 /// <summary>
-/// Plugin identity.
+/// Plugin identity, declaring <see cref="NfoGeneratorSettings"/> as the
+/// plugin's main configuration so the API reports it alongside the plugin.
 /// </summary>
-public sealed class NfoGeneratorPlugin : IPlugin
+public sealed class NfoGeneratorPlugin : IPlugin<NfoGeneratorSettings>
 {
     public static readonly Guid StaticID = Guid.Parse("5c5482c1-3dd0-49cb-b862-d57e305da353");
 

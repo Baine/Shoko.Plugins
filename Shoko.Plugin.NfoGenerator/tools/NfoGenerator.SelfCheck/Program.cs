@@ -56,6 +56,10 @@ internal static class LanguageResolverCheck
         public ITitle? PreferredTitle { get; set; }
         public IReadOnlyList<ITitle> Titles { get; set; } = [];
         public string Title => PreferredTitle?.Value ?? DefaultTitle.Value;
+        public string? OriginalLanguageCode { get; set; }
+        public string? OriginalCountryCode { get; set; }
+        public TitleLanguage? OriginalLanguage { get; set; }
+        public ITitle? OriginalTitle { get; set; }
     }
 
     private sealed class FakeDescribed : IWithOverviews

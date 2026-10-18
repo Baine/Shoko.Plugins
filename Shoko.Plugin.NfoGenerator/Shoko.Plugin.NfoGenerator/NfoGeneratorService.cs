@@ -77,23 +77,32 @@ public sealed class NfoGeneratorService : IHostedService
 
     private void OnReleaseSaved(object? sender, VideoReleaseSavedEventArgs e)
     {
-        InvalidateTopologyForPaths(e.Video.Files.Select(f => f.Path));
+        // Gate first: this runs inline on whichever job saved the release, so a
+        // disabled gate must not pay for the e.Video.Files traversal.
         if (!_settings.Load().GenerateOnImport)
+        {
+            InvalidateTopology();
             return;
+        }
+        InvalidateTopologyForPaths(e.Video.Files.Select(f => f.Path));
         Queue(job => { job.Kind = NfoGenerationKind.Video; job.ID = e.Video.LocalID; });
     }
 
     private void OnSeriesUpdated(object? sender, SeriesInfoUpdatedEventArgs e)
     {
-        if (e.SeriesInfo is IShokoSeries series)
-            InvalidateTopologyForPaths(series.Episodes.OfType<IShokoEpisode>().SelectMany(e => e.Videos).SelectMany(v => v.Files).Select(f => f.Path));
+        // Gate first: the series → episodes → videos → files walk is a lazy graph
+        // traversal, and this runs inline on the metadata job that raised the event.
         if (!_settings.Load().GenerateOnMetadataUpdate)
+        {
+            InvalidateTopology();
             return;
-        if (e.SeriesInfo is not IShokoSeries seriesToQueue)
+        }
+        if (e.SeriesInfo is not IShokoSeries series)
             return;
+        InvalidateTopologyForPaths(series.Episodes.OfType<IShokoEpisode>().SelectMany(episode => episode.Videos).SelectMany(v => v.Files).Select(f => f.Path));
         // Metadata updates rewrite even unchanged files so the media library
         // sees a fresh mtime after a metadata change.
-        Queue(job => { job.Kind = NfoGenerationKind.Series; job.ID = seriesToQueue.LocalID; job.Force = true; });
+        Queue(job => { job.Kind = NfoGenerationKind.Series; job.ID = series.LocalID; job.Force = true; });
     }
 
     private void OnReleaseDeleted(object? sender, VideoReleaseDeletedEventArgs e)
@@ -110,9 +119,13 @@ public sealed class NfoGeneratorService : IHostedService
 
     private void OnVideoFileRelocated(object? sender, VideoFileRelocatedEventArgs e)
     {
-        InvalidateTopologyForPaths([e.PreviousPath, e.File.Path]);
+        // Gate first: this runs inline on the rename job's own thread.
         if (!_settings.Load().GenerateOnImport)
+        {
+            InvalidateTopology();
             return;
+        }
+        InvalidateTopologyForPaths([e.PreviousPath, e.File.Path]);
         Queue(job => { job.Kind = NfoGenerationKind.Relocated; job.ID = e.File.ID; job.PreviousPath = e.PreviousPath; });
     }
 

@@ -8,7 +8,15 @@ namespace Shoko.Plugin.NfoGenerator.Config;
 /// Plugin settings surfaced in the Shoko WebUI (registered automatically as a
 /// plugin <see cref="IConfiguration"/>).
 /// </summary>
-public sealed class NfoGeneratorSettings : IConfiguration
+/// <remarks>
+/// A configuration is hidden from the UI unless it opts in with
+/// <see cref="IVisibleConfiguration"/>, and the settings page embedded under
+/// Settings → Plugins finds its configuration ID through the v3
+/// <c>Configuration</c> list, which drops hidden entries. It is also declared
+/// as the plugin's main configuration through
+/// <see cref="IPlugin{TConfiguration}"/>.
+/// </remarks>
+public sealed class NfoGeneratorSettings : IPluginConfiguration, IVisibleConfiguration
 {
     /// <summary>
     /// Priority, comma-separated list of languages for titles. Tokens are
