@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.10",
+      "tag": "tmdb-link-fixer/v0.1.10",
+      "source_revision": "96a931847df6a23e8f0a95a08eac895d18d95945",
+      "released_at": "2026-10-18T08:40:36Z",
+      "channel": "Stable",
+      "release_notes": "Update to Shoko.Abstractions 6.0.0-alpha.108.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.10/TmdbLinkFixer-v0.1.10_linux-arm64.zip",
+          "checksum": "97ad38942821cbd1f07c0d2dd17f0dc378ac59fe37b8e26753af1282f7f63eb3"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.10/TmdbLinkFixer-v0.1.10_linux-x64.zip",
+          "checksum": "bccdcfc1eed246094bf0eb3e1374e64b501784760308a5276b41159f28a5331a"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/tmdb-link-fixer/v0.1.10/TmdbLinkFixer-v0.1.10_win-x64.zip",
+          "checksum": "86426d946326d222fb2fcbe7db5d5f02bb8b1cddea8c9b52d5dd4d484eeede9d"
+        }
+      ]
+    },
+    {
       "version": "0.1.9",
       "tag": "tmdb-link-fixer/v0.1.9",
       "source_revision": "c6c776e0eb6808e00ab106dcb33e7199146e48fd",
