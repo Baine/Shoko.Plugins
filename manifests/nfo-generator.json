@@ -14,6 +14,34 @@
   "image_url": null,
   "releases": [
     {
+      "version": "0.1.19",
+      "tag": "nfo-generator/v0.1.19",
+      "source_revision": "42f4443eef2699e771b848fe33c80bf5612cd06d",
+      "released_at": "2026-10-30T10:40:54Z",
+      "channel": "Stable",
+      "release_notes": "Exclude import folders from generation. The settings page now lists Shoko's configured import folders as checkboxes instead of a free-text field, and files inside a checked folder get no NFOs or artwork from any generation path: import events, manual series/episode/folder triggers, relocations and library runs. Cleanup sweeps are unchanged, so plugin-owned NFOs left behind in a newly excluded folder are still removed.",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.19/NfoGenerator-v0.1.19_linux-arm64.zip",
+          "checksum": "e0fdc2bb99f0eba539606185ab7bc573b7a6676e094bb87ef8ef1c0b8ff7a915"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.19/NfoGenerator-v0.1.19_linux-x64.zip",
+          "checksum": "793d4c58f363e5ac681f7c6d5e1d3f3b6cd99553c1efd7f0689548d4875502aa"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Baine/Shoko.Plugins/releases/download/nfo-generator/v0.1.19/NfoGenerator-v0.1.19_win-x64.zip",
+          "checksum": "ce43c8c73ebdfaa6e8f2479c6e44f153dfdb53a2a38dab331bf7b63d9c540280"
+        }
+      ]
+    },
+    {
       "version": "0.1.18",
       "tag": "nfo-generator/v0.1.18",
       "source_revision": "96a931847df6a23e8f0a95a08eac895d18d95945",
