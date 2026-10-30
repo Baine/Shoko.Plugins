@@ -22,6 +22,7 @@ using Shoko.Plugin.NfoGenerator.Nfo;
 var outputDir = Path.Combine(Path.GetTempPath(), "nfo-generator-selfcheck");
 NfoWriter.SelfCheck(outputDir);
 LanguageResolverCheck.SelfCheck();
+ImportFolderExclusionsCheck.SelfCheck();
 NfoGenerationJob.SelfCheck();
 NfoCleanupCheck.SelfCheck(Path.Combine(outputDir, "cleanup"));
 GenerationCheck.SelfCheck(Path.Combine(outputDir, "generation"));
@@ -620,8 +621,35 @@ internal static class GenerationCheck
         AssertExists(Path.Combine(libraryA, "Unmapped B", "tvshow.nfo"), "unmapped series B shared the managed-folder scope");
 
         RetryFailedRootWrite(service, outputDir, canonical);
+        CheckImportFolderExclusion(outputDir, canonical);
         CheckIndexedLibraryCleanup(configurationService, outputDir);
         Console.WriteLine("OK generation state");
+    }
+
+    private static void CheckImportFolderExclusion(string outputDir, IShokoSeries series)
+    {
+        var root = Path.Combine(outputDir, "exclusion");
+        var droppedRoot = Path.Combine(root, "_drop");
+        var keptRoot = Path.Combine(root, "media");
+        var dropped = Path.Combine(droppedRoot, "Show");
+        var kept = Path.Combine(keptRoot, "Show");
+        var droppedEntry = CreateEntry(Path.Combine(dropped, "episode.mkv"), 1001, series, 16);
+        var keptEntry = CreateEntry(Path.Combine(kept, "episode.mkv"), 1002, series, 17);
+
+        var videoService = DispatchProxy.Create<IVideoService, GenerationVideoServiceProxy>();
+        var videoProxy = (GenerationVideoServiceProxy)(object)videoService;
+        videoProxy.Files = [droppedEntry.File, keptEntry.File];
+        videoProxy.ManagedFolders = [ManagedFolder(droppedRoot), ManagedFolder(keptRoot)];
+        var metadataService = Proxy<IMetadataService>(method => method.Name == "GetAllShokoSeries" ? new[] { series } : Default(method));
+        var configured = new NfoGeneratorSettings { ExcludedImportFolders = droppedRoot };
+        var configurationService = Proxy<IConfigurationService>(method => method.Name == "Load" ? configured : Default(method));
+        var settings = new ConfigurationProvider<NfoGeneratorSettings>(configurationService);
+        var service = new NfoGeneratorService(null!, settings, metadataService, videoService, null!, NullLogger<NfoGeneratorService>.Instance);
+
+        int written = InvokeGenerateForFiles(service, [droppedEntry.File, keptEntry.File]);
+        AssertEqual(1, written, "excluded import folder still produced NFO output");
+        AssertMissing(Path.Combine(dropped, "episode.nfo"), "episode NFO was generated inside an excluded import folder");
+        AssertExists(Path.Combine(kept, "episode.nfo"), "other import folder was skipped");
     }
 
     private static void CheckIndexedLibraryCleanup(IConfigurationService configurationService, string outputDir)
@@ -981,5 +1009,32 @@ internal static class GenerationCheck
             var relative = Path.GetRelativePath(root, path);
             return relative == "." || (!relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) && relative != "..");
         }
+    }
+}
+
+internal static class ImportFolderExclusionsCheck
+{
+    public static void SelfCheck()
+    {
+        var temp = Path.GetFullPath(Path.GetTempPath());
+        var droppedRoot = Path.Combine(temp, "_drop");
+        var dropped = Path.Combine(droppedRoot, "Show", "episode.mkv");
+        var media = Path.Combine(temp, "media", "Show", "episode.mkv");
+
+        Assert(!ImportFolderExclusions.IsExcluded(media, null), "null list excludes nothing");
+        Assert(!ImportFolderExclusions.IsExcluded(media, "  "), "blank list excludes nothing");
+        Assert(ImportFolderExclusions.IsExcluded(dropped, droppedRoot), "import folder path matches descendants");
+        Assert(ImportFolderExclusions.IsExcluded(dropped, droppedRoot + Path.DirectorySeparatorChar), "trailing separator still matches");
+        Assert(ImportFolderExclusions.IsExcluded(dropped, $" {Path.Combine(temp, "other")} , {droppedRoot} "), "list is trimmed and split");
+        Assert(!ImportFolderExclusions.IsExcluded(dropped, droppedRoot + "2"), "sibling import folder is not matched");
+        Assert(!ImportFolderExclusions.IsExcluded(media, droppedRoot), "file in another import folder is not excluded");
+        Assert(!ImportFolderExclusions.IsExcluded(dropped, "_drop"), "non-path token is ignored");
+        Console.WriteLine("OK ImportFolderExclusions");
+    }
+
+    private static void Assert(bool condition, string what)
+    {
+        if (!condition)
+            throw new InvalidOperationException($"ImportFolderExclusions: {what}");
     }
 }

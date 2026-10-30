@@ -43,6 +43,13 @@ serialization/compare logic.
   root), `VideoFileRelocated` (gated by `GenerateOnImport`: removes stale
   output and generated-only directories at the old path, then regenerates at
   the new path).
+- **Folder exclusions**: the settings page lists Shoko's import folders
+  (`GET /api/plugin/NfoGenerator/folders`) as checkboxes and saves the checked
+  absolute paths to `ExcludedImportFolders`; every generation path
+  (`GenerateForFiles`) drops files inside them via
+  `Config/ImportFolderExclusions.cs` (path-prefix match, no name tokens).
+  Cleanup sweeps are unchanged: they still only remove plugin-owned orphans,
+  including any left behind in a newly excluded folder.
 - **Language fallback**: `Config/LanguageResolver.cs` — comma-separated tokens:
   BCP-47 codes (case-insensitive), `shoko` (preferred), `original` (default).
   Falls back to preferred → original → first non-empty.

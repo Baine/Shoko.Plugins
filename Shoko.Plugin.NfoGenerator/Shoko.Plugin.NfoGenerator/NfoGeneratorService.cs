@@ -274,7 +274,8 @@ public sealed class NfoGeneratorService : IHostedService
 
     private int GenerateForFiles(IEnumerable<IVideoFile> files, bool force, GenerationPass? pass = null, bool sweep = true, LibraryIndex? libraryIndex = null, RelocationTiming? timing = null)
     {
-        var targets = files.Where(f => f.IsAvailable && f.Video is not null).DistinctBy(f => f.ID).ToList();
+        var exclusions = _settings.Load().ExcludedImportFolders;
+        var targets = files.Where(f => f.IsAvailable && f.Video is not null && !ImportFolderExclusions.IsExcluded(f.Path, exclusions)).DistinctBy(f => f.ID).ToList();
         _logger.LogInformation("Generating NFO files for {Count} file(s)", targets.Count);
         pass ??= new GenerationPass();
         foreach (var file in targets)

@@ -46,6 +46,16 @@ public sealed class NfoGeneratorSettings : IPluginConfiguration, IVisibleConfigu
     [DefaultValue(true)]
     public bool GenerateOnImport { get; set; } = true;
 
+    /// <summary>
+    /// Absolute paths of Shoko import folders whose video files are skipped.
+    /// Selected from Shoko's configured import folders on the settings page.
+    /// </summary>
+    [Display(
+        Name = "Excluded Import Folders",
+        Description = "Import folders whose video files get no NFOs or artwork. Chosen from Shoko's configured import folders.")]
+    [DefaultValue("")]
+    public string ExcludedImportFolders { get; set; } = "";
+
     /// <summary>Regenerate NFO files whenever series metadata is updated.</summary>
     [Display(
         Name = "Generate On Metadata Update",

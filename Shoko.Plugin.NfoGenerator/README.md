@@ -45,6 +45,7 @@ Settings are exposed in the WebUI under `Settings > Plugins > NFO Generator`:
 | `Description Language` | `shoko` | Same as above, for descriptions/plots. |
 | `Generate On Import` | `true` | Generate NFO files whenever a video file is matched to metadata. |
 | `Generate On Metadata Update` | `true` | Regenerate NFO files when series metadata changes. Unchanged files are not rewritten. |
+| `Excluded Import Folders` | *(empty)* | Import folders, picked from Shoko's configured import folders, where no NFOs or artwork are written (e.g. a `_drop` import folder). Stored as comma-separated absolute folder paths. |
 
 ## API
 

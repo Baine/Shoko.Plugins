@@ -67,6 +67,14 @@ public sealed class NfoGeneratorController : ControllerBase
         return Accepted(new { status = "queued" });
     }
 
+    /// <summary>Lists Shoko's configured import folders for the settings page's exclusion picker.</summary>
+    [HttpGet("folders")]
+    public IActionResult GetImportFolders()
+        => Ok(_videoService.GetAllManagedFolders()
+            .Select(folder => new { folder.ID, folder.Path })
+            .OrderBy(folder => folder.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+
     /// <summary>
     /// Serves the settings page shown by the WebUI under Settings → Plugins.
     /// The page itself is scaffolding only; every data call it makes is
@@ -91,6 +99,9 @@ public sealed class NfoGeneratorController : ControllerBase
           .field > span { display: block; margin-bottom: 4px; color: #aab2c0; }
           .field small { display: block; color: #6d7583; margin-top: 4px; }
           input[type="text"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #2c333e; border-radius: 6px; background: #14171d; color: #cfd8e3; }
+          .folders { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid #2c333e; border-radius: 6px; background: #14171d; }
+          .folders label { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+          .folders .empty { color: #6d7583; }
           .row { display: flex; gap: 24px; flex-wrap: wrap; }
           .row .field { display: flex; align-items: center; gap: 8px; }
           .row .field > span { margin: 0; }
@@ -118,6 +129,11 @@ public sealed class NfoGeneratorController : ControllerBase
               <input type="text" name="DescriptionLanguage" spellcheck="false" />
               <small>Priority, comma separated. Same tokens as Title Language.</small>
             </label>
+            <div class="field">
+              <span>Excluded Import Folders</span>
+              <div id="folder-list" class="folders"><span class="empty">Loading import folders...</span></div>
+              <small>Checked import folders get no NFOs or artwork.</small>
+            </div>
             <div class="row">
               <label class="field">
                 <input type="checkbox" name="GenerateOnImport" />
@@ -167,6 +183,9 @@ public sealed class NfoGeneratorController : ControllerBase
             }
 
             let configID = '';
+            let excludedFolders = [];
+
+            const folderKey = path => path.replace(/[\\/]+$/, '').toLowerCase();
 
             async function loadConfig() {
               const listRes = await fetch(`/api/v3/Configuration?pluginID=${pluginID}`, { headers: headers() });
@@ -181,8 +200,33 @@ public sealed class NfoGeneratorController : ControllerBase
               const cfg = await res.json();
               form.elements.TitleLanguage.value = cfg.TitleLanguage || 'shoko';
               form.elements.DescriptionLanguage.value = cfg.DescriptionLanguage || 'shoko';
+              excludedFolders = (cfg.ExcludedImportFolders || '').split(',').map(s => s.trim()).filter(Boolean).map(folderKey);
               form.elements.GenerateOnImport.checked = !!cfg.GenerateOnImport;
               form.elements.GenerateOnMetadataUpdate.checked = !!cfg.GenerateOnMetadataUpdate;
+            }
+
+            async function loadFolders() {
+              const res = await fetch('/api/plugin/NfoGenerator/folders', { headers: headers() });
+              if (!res.ok) throw new Error(`Failed to list import folders (${res.status}).`);
+              const folders = await res.json();
+              const list = document.getElementById('folder-list');
+              list.textContent = '';
+              if (!Array.isArray(folders) || folders.length === 0) {
+                const empty = document.createElement('span');
+                empty.className = 'empty';
+                empty.textContent = 'No import folders configured in Shoko.';
+                list.appendChild(empty);
+                return;
+              }
+              for (const folder of folders) {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.value = folder.Path;
+                input.checked = excludedFolders.includes(folderKey(folder.Path));
+                label.append(input, folder.Path);
+                list.appendChild(label);
+              }
             }
 
             form.addEventListener('submit', async (event) => {
@@ -194,6 +238,7 @@ public sealed class NfoGeneratorController : ControllerBase
                 const body = {
                   TitleLanguage: form.elements.TitleLanguage.value.trim(),
                   DescriptionLanguage: form.elements.DescriptionLanguage.value.trim(),
+                  ExcludedImportFolders: [...document.querySelectorAll('#folder-list input[type="checkbox"]:checked')].map(input => input.value).join(', '),
                   GenerateOnImport: form.elements.GenerateOnImport.checked,
                   GenerateOnMetadataUpdate: form.elements.GenerateOnMetadataUpdate.checked,
                 };
@@ -223,7 +268,7 @@ public sealed class NfoGeneratorController : ControllerBase
               }
             });
 
-            loadConfig().catch(err => setStatus(err.message, 'error'));
+            loadConfig().then(loadFolders).catch(err => setStatus(err.message, 'error'));
           </script>
         </body>
         </html>
